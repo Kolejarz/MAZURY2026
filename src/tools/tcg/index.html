@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Generator TCG - Ocean Rescue</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="styles.css">
+    <!-- html2pdf for generating PDF -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+</head>
+<body class="bg-slate-50 text-slate-900 font-sans h-screen flex overflow-hidden">
+    
+    <!-- Sidebar -->
+    <aside class="w-80 bg-white shadow-xl flex flex-col z-10">
+        <div class="p-6 border-b border-slate-200">
+            <h1 class="text-2xl font-bold text-slate-800">Generator Albumu</h1>
+            <p class="text-sm text-slate-500 mt-1">Ocean Rescue (Moduł 5)</p>
+        </div>
+
+        <div class="flex-1 overflow-y-auto p-6 space-y-8">
+            <!-- Actions -->
+            <section>
+                <h2 class="text-xs uppercase font-bold text-slate-400 mb-3 tracking-wider">Akcje</h2>
+                <div class="space-y-2">
+                    <button id="btn-new-card" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded transition-colors text-left flex items-center gap-2">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                        Nowa Karta
+                    </button>
+                    <button id="btn-import-csv" class="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium py-2 px-4 rounded transition-colors text-left flex items-center gap-2">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                        Import CSV (Batch)
+                    </button>
+                    <input type="file" id="csv-upload" class="hidden" accept=".csv">
+                </div>
+            </section>
+
+            <!-- Readout -->
+            <section>
+                <h2 class="text-xs uppercase font-bold text-slate-400 mb-3 tracking-wider">Stan Talii</h2>
+                <div id="deck-readout" class="space-y-3">
+                    <!-- Readout items will be injected here -->
+                    <div class="text-sm text-slate-500">Wczytywanie...</div>
+                </div>
+            </section>
+            
+            <!-- Export -->
+            <section>
+                <h2 class="text-xs uppercase font-bold text-slate-400 mb-3 tracking-wider">Eksport</h2>
+                <div class="space-y-2">
+                    <button id="btn-export-json" class="w-full border border-slate-300 hover:bg-slate-50 text-slate-700 font-medium py-2 px-4 rounded transition-colors text-left">
+                        Eksportuj deck.json
+                    </button>
+                    <button id="btn-export-pdf" class="w-full border border-slate-300 hover:bg-slate-50 text-slate-700 font-medium py-2 px-4 rounded transition-colors text-left">
+                        Generuj PDF do druku
+                    </button>
+                </div>
+            </section>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="flex-1 bg-slate-100 relative overflow-y-auto">
+        <div class="p-8 max-w-7xl mx-auto">
+            
+            <!-- Editor Modal (Hidden by default) -->
+            <div id="editor-modal" class="hidden fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                <div class="bg-white rounded-xl shadow-2xl w-full max-w-4xl flex max-h-full">
+                    
+                    <!-- Form -->
+                    <div class="w-1/2 p-6 overflow-y-auto border-r border-slate-100">
+                        <h2 class="text-xl font-bold mb-4" id="editor-title">Edytuj Kartę</h2>
+                        <form id="card-form" class="space-y-4">
+                            <input type="hidden" id="card-id">
+                            
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-slate-700 mb-1">Numer Karty</label>
+                                    <input type="number" id="card-number" required class="w-full border-slate-300 rounded-md shadow-sm border p-2 focus:ring-blue-500 focus:border-blue-500">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-slate-700 mb-1">Kategoria</label>
+                                    <input type="text" id="card-category" required placeholder="np. domowe, jadowite" list="category-list" class="w-full border-slate-300 rounded-md shadow-sm border p-2 focus:ring-blue-500 focus:border-blue-500">
+                                    <datalist id="category-list"></datalist>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-slate-700 mb-1">Motyw Kolorystyczny</label>
+                                    <select id="card-theme" class="w-full border-slate-300 rounded-md shadow-sm border p-2 focus:ring-blue-500 focus:border-blue-500">
+                                        <option value="pink">Różowy (Pink)</option>
+                                        <option value="blue">Niebieski (Blue)</option>
+                                        <option value="green">Zielony (Green)</option>
+                                        <option value="yellow">Żółty (Yellow)</option>
+                                        <option value="purple">Fioletowy (Purple)</option>
+                                        <option value="orange">Pomarańczowy (Orange)</option>
+                                        <option value="teal">Turkusowy (Teal)</option>
+                                        <option value="cyan">Błękitny (Cyan)</option>
+                                        <option value="indigo">Indygo (Indigo)</option>
+                                        <option value="rose">Różany (Rose)</option>
+                                        <option value="lime">Limonkowy (Lime)</option>
+                                        <option value="amber">Bursztynowy (Amber)</option>
+                                        <option value="emerald">Szmaragdowy (Emerald)</option>
+                                        <option value="fuchsia">Fuksja (Fuchsia)</option>
+                                        <option value="stone">Szary (Stone)</option>
+                                        <option value="red">Czerwony (Red)</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 mb-1">Imię / Nazwa</label>
+                                <input type="text" id="card-name" required class="w-full border-slate-300 rounded-md shadow-sm border p-2 focus:ring-blue-500 focus:border-blue-500">
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 mb-1">Ciekawostka</label>
+                                <textarea id="card-fact" rows="3" required class="w-full border-slate-300 rounded-md shadow-sm border p-2 focus:ring-blue-500 focus:border-blue-500"></textarea>
+                            </div>
+
+                            <div class="border-t border-slate-200 pt-4 mt-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-slate-700 mb-1">Prompt do Tekstu (ChatGPT/Claude)</label>
+                                    <div class="flex gap-2">
+                                        <input type="text" id="text-prompt" class="flex-1 w-full p-2 border border-slate-300 rounded text-sm bg-slate-50" readonly>
+                                        <button type="button" id="btn-copy-text-prompt" class="bg-slate-200 hover:bg-slate-300 px-3 rounded text-sm shrink-0">Kopiuj</button>
+                                    </div>
+                                    <p class="text-xs text-slate-500 mt-1 mb-4">Skopiuj ten prompt i wklej wynik JSON (Ctrl+V) w dowolnym miejscu!</p>
+                                </div>
+
+                                <div>
+                                    <label class="block text-sm font-medium text-slate-700 mb-1">Prompt do Obrazu (Midjourney/DALL-E)</label>
+                                    <div class="flex gap-2">
+                                        <input type="text" id="ai-prompt" class="flex-1 w-full p-2 border border-slate-300 rounded text-sm bg-slate-50" readonly>
+                                        <button type="button" id="btn-copy-prompt" class="bg-slate-200 hover:bg-slate-300 px-3 rounded text-sm shrink-0">Kopiuj</button>
+                                    </div>
+                                </div>
+
+                                <label class="block text-sm font-medium text-slate-700 mb-1">Obraz (Wgraj lub Wklej ze Schowka)</label>
+                                <input type="file" id="card-image-upload" accept="image/*" class="w-full text-sm">
+                                <input type="hidden" id="card-image-data">
+                            </div>
+
+                            <div class="flex justify-end gap-2 pt-4 border-t border-slate-200">
+                                <button type="button" id="btn-cancel" class="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded">Anuluj</button>
+                                <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-medium">Zapisz Kartę</button>
+                            </div>
+                        </form>
+                    </div>
+                    
+                    <!-- Preview -->
+                    <div class="w-1/2 bg-slate-50 p-6 flex flex-col items-center justify-center relative">
+                        <div class="absolute top-4 left-4 text-xs font-bold text-slate-400 uppercase">Podgląd</div>
+                        <div id="card-preview-container" class="preview-scale">
+                            <!-- Card rendering injected here by JS -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Card Grid -->
+            <div>
+                <div class="flex justify-between items-end mb-6">
+                    <h2 class="text-2xl font-bold text-slate-800">Karty w Talii</h2>
+                    <div class="text-sm text-slate-500" id="total-cards-count">0 kart</div>
+                </div>
+                
+                <div id="cards-grid" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
+                    <!-- Cards injected here -->
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <!-- Hidden Print Container -->
+    <div id="print-container" class="hidden"></div>
+
+    <script src="app.js"></script>
+</body>
+</html>
