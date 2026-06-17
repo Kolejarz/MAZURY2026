@@ -361,6 +361,25 @@ els.btnExportJson.addEventListener('click', async () => {
     URL.revokeObjectURL(url);
 });
 
+// CSV Template Download
+const btnDownloadCsvTemplate = document.getElementById('btn-download-csv-template');
+if (btnDownloadCsvTemplate) {
+    btnDownloadCsvTemplate.addEventListener('click', () => {
+        const headers = "name,category,theme,facts\n";
+        const example1 = "Skolopendra Olbrzymia,Jadowite,red,Skolopendra potrafi upolować nawet małą jaszczurkę.\n";
+        const example2 = "Kot Domowy,Domowe,blue,Koty przesypiają nawet 16 godzin dziennie.\n";
+        const csvContent = headers + example1 + example2;
+        
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'szablon_kart.csv';
+        a.click();
+        URL.revokeObjectURL(url);
+    });
+}
+
 // CSV Import
 els.btnImportCsv.addEventListener('click', () => els.csvUpload.click());
 els.csvUpload.addEventListener('change', (e) => {
@@ -382,11 +401,27 @@ els.csvUpload.addEventListener('change', (e) => {
         for (let i = start; i < lines.length; i++) {
             // Simple CSV parse (ignores quotes with commas inside, good enough for bootstrap)
             const parts = lines[i].split(',');
-            if (parts.length >= 3) {
+            
+            const validThemes = ['pink','blue','green','yellow','purple','orange','teal','cyan','indigo','rose','lime','amber','emerald','fuchsia','stone','red'];
+            const potentialTheme = parts.length > 2 ? parts[2].trim().toLowerCase() : '';
+            
+            if (parts.length >= 4 && validThemes.includes(potentialTheme)) {
                 await saveCard({
                     number: nextNum++,
                     name: parts[0].trim(),
                     category: parts[1].trim(),
+                    theme: potentialTheme,
+                    facts: parts.slice(3).join(',').trim(),
+                    image: ''
+                });
+                added++;
+            } else if (parts.length >= 3) {
+                // Fallback to old format
+                await saveCard({
+                    number: nextNum++,
+                    name: parts[0].trim(),
+                    category: parts[1].trim(),
+                    theme: 'pink',
                     facts: parts.slice(2).join(',').trim(), // Re-join fun fact if it had commas
                     image: ''
                 });
