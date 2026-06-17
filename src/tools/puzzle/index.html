@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Puzzle Generator (M2) — Mazury 2026</title>
+    <meta name="description" content="Procedural Ice-Cave puzzle generator for Mazury 2026 camp game. Generates solvable Archipelago Maps with BFS validation.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* ── Design tokens ──────────────────────────────────── */
+        :root {
+            --bg-deep:    #0a0e1a;
+            --bg-surface: #111827;
+            --bg-card:    #1a2236;
+            --bg-inset:   #0d1321;
+            --border:     #1e293b;
+            --border-hi:  #334155;
+            --text:       #e2e8f0;
+            --text-dim:   #94a3b8;
+            --text-muted: #64748b;
+            --accent:     #3b82f6;
+            --accent-glow: rgba(59, 130, 246, 0.35);
+            --green:      #22c55e;
+            --pink:       #f472b6;
+            --amber:      #f59e0b;
+            --font-sans:  'Inter', system-ui, sans-serif;
+            --font-mono:  'JetBrains Mono', 'Fira Code', monospace;
+        }
+
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: var(--font-sans);
+            background: var(--bg-deep);
+            color: var(--text);
+            min-height: 100vh;
+            line-height: 1.5;
+        }
+
+        /* ── Screen layout ──────────────────────────────────── */
+        .app-container {
+            max-width: 1280px;
+            margin: 0 auto;
+            padding: 1.5rem;
+        }
+
+        .app-header {
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 1rem;
+            margin-bottom: 2rem;
+        }
+        .app-title {
+            font-size: 1.875rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, #3b82f6, #06b6d4, #10b981);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            letter-spacing: -0.02em;
+        }
+        .app-subtitle {
+            color: var(--text-dim);
+            font-size: 0.875rem;
+            margin-top: 0.25rem;
+        }
+
+        .main-layout {
+            display: grid;
+            grid-template-columns: 320px 1fr;
+            gap: 2rem;
+            align-items: start;
+        }
+
+        /* ── Controls sidebar ──────────────────────────────── */
+        .sidebar {
+            background: var(--bg-surface);
+            border: 1px solid var(--border);
+            border-radius: 1rem;
+            padding: 1.5rem;
+            position: sticky;
+            top: 1rem;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.3);
+        }
+        .sidebar h2 {
+            font-size: 1.125rem;
+            font-weight: 700;
+            margin-bottom: 1.25rem;
+            color: white;
+        }
+        .field { margin-bottom: 1rem; }
+        .field label {
+            display: block;
+            font-size: 0.75rem;
+            color: var(--text-dim);
+            margin-bottom: 0.375rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            font-weight: 500;
+        }
+        .field input {
+            width: 100%;
+            background: var(--bg-inset);
+            border: 1px solid var(--border);
+            border-radius: 0.5rem;
+            padding: 0.5rem 0.75rem;
+            color: white;
+            font-family: var(--font-mono);
+            font-size: 0.875rem;
+            transition: border-color 0.2s;
+        }
+        .field input:focus {
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px var(--accent-glow);
+        }
+        .field-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.75rem;
+        }
+
+        .btn-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.625rem;
+            padding-top: 1rem;
+            border-top: 1px solid var(--border);
+            margin-top: 0.5rem;
+        }
+        .btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            padding: 0.625rem 1rem;
+            border-radius: 0.5rem;
+            font-weight: 600;
+            font-size: 0.875rem;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-family: var(--font-sans);
+        }
+        .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+        .btn-primary {
+            background: var(--accent);
+            color: white;
+            box-shadow: 0 0 20px var(--accent-glow);
+        }
+        .btn-primary:hover:not(:disabled) { background: #2563eb; }
+        .btn-secondary {
+            background: var(--bg-card);
+            color: var(--text);
+            border: 1px solid var(--border);
+        }
+        .btn-secondary:hover:not(:disabled) { background: var(--border-hi); }
+        .btn-export { background: #059669; color: white; }
+        .btn-export:hover:not(:disabled) { background: #047857; }
+
+        /* ── Preview area ──────────────────────────────────── */
+        .preview-area {
+            min-height: 400px;
+        }
+        .empty-msg {
+            color: var(--text-muted);
+            text-align: center;
+            padding: 4rem 2rem;
+            border: 2px dashed var(--border);
+            border-radius: 1rem;
+        }
+
+        /* ── Histogram ─────────────────────────────────────── */
+        .histogram-section {
+            background: var(--bg-surface);
+            border: 1px solid var(--border);
+            border-radius: 1rem;
+            padding: 1.25rem 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+        .histogram-title {
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 1rem;
+        }
+        .histogram-chart {
+            display: flex;
+            align-items: flex-end;
+            gap: 0.5rem;
+            height: 120px;
+        }
+        .histogram-bar-wrap {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.25rem;
+            height: 100%;
+            justify-content: flex-end;
+        }
+        .histogram-count {
+            font-size: 0.7rem;
+            font-weight: 600;
+            color: var(--text-dim);
+            font-family: var(--font-mono);
+        }
+        .histogram-bar {
+            width: 100%;
+            max-width: 48px;
+            background: linear-gradient(180deg, var(--accent), #1d4ed8);
+            border-radius: 4px 4px 0 0;
+            min-height: 4px;
+            transition: height 0.5s ease;
+        }
+        .histogram-label {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            font-family: var(--font-mono);
+        }
+
+        /* ── Preview card ──────────────────────────────────── */
+        .preview-card {
+            display: flex;
+            gap: 1.5rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 0.75rem;
+            padding: 1.25rem;
+            margin-bottom: 1rem;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        .preview-card:hover {
+            border-color: var(--border-hi);
+            box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+        }
+        .preview-info { flex: 1; min-width: 0; }
+        .preview-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.5rem;
+        }
+        .preview-id {
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: var(--accent);
+            font-family: var(--font-mono);
+        }
+        .badge-solvable {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+            background: #166534;
+            color: #86efac;
+            font-size: 0.65rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            padding: 0.25rem 0.5rem;
+            border-radius: 9999px;
+        }
+        .preview-meta {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            font-family: var(--font-mono);
+            margin-bottom: 1rem;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+        }
+        .stat-box {
+            background: var(--bg-inset);
+            border-radius: 0.5rem;
+            padding: 0.625rem 0.75rem;
+        }
+        .stat-label {
+            font-size: 0.65rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            font-weight: 500;
+        }
+        .stat-value {
+            font-size: 1.125rem;
+            font-weight: 600;
+            font-family: var(--font-mono);
+            color: white;
+        }
+        .solution-section {
+            background: var(--bg-inset);
+            border-radius: 0.5rem;
+            padding: 0.625rem 0.75rem;
+            margin-bottom: 1rem;
+        }
+        .solution-text {
+            font-family: var(--font-mono);
+            color: var(--pink);
+            font-size: 0.875rem;
+            word-break: break-all;
+            margin-top: 0.25rem;
+        }
+        .play-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            width: 100%;
+            padding: 0.625rem;
+            background: var(--accent);
+            color: white;
+            border: none;
+            border-radius: 0.5rem;
+            font-weight: 600;
+            font-size: 0.875rem;
+            cursor: pointer;
+            font-family: var(--font-sans);
+            transition: background 0.2s;
+        }
+        .play-btn:hover { background: #2563eb; }
+
+        /* ── Grid (shared screen/print) ────────────────────── */
+        .puzzle-grid-wrapper {
+            position: relative;
+            width: 260px;
+            height: 260px;
+            flex-shrink: 0;
+        }
+        .puzzle-grid {
+            display: grid;
+            width: 100%;
+            height: 100%;
+            border: 2px solid #475569;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .puzzle-cell {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid #334155;
+            background: var(--bg-surface);
+            overflow: hidden;
+        }
+        .cell-obstacle { background: transparent; padding: 1px; }
+        .cell-goal { background: transparent; padding: 1px; }
+        .cell-start {
+            background: var(--bg-surface);
+            /* Ship is shown via overlay, not in cell */
+        }
+        .cell-empty { background: var(--bg-surface); }
+
+        .ship-abs {
+            position: absolute;
+            top: 0;
+            left: 0;
+            transition: left 0.4s ease-in-out, top 0.4s ease-in-out;
+            z-index: 10;
+            pointer-events: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .ship-abs svg {
+            filter: invert(1);
+        }
+
+        @keyframes shipPulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.15); }
+        }
+        .ship-arrived {
+            animation: shipPulse 0.3s ease-in-out 3;
+        }
+
+        /* ── Print styles ──────────────────────────────────── */
+        @media screen {
+            #print-container { display: none !important; }
+        }
+
+        @media print {
+            #app-container { display: none !important; }
+            #print-container { display: block !important; }
+
+            * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+
+            body {
+                background: white !important;
+                color: black !important;
+                font-size: 11pt;
+                margin: 0;
+                padding: 0;
+            }
+
+            .print-section-title {
+                font-size: 16pt;
+                font-weight: 800;
+                margin: 0 0 8pt 0;
+                color: black;
+                text-align: center;
+            }
+            .print-page-break {
+                break-before: page;
+            }
+
+            .print-handouts-grid {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 10pt;
+            }
+
+            .print-card {
+                border: 2.5pt solid black;
+                padding: 8pt;
+                break-inside: avoid;
+                page-break-inside: avoid;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+            }
+            .print-card-header {
+                width: 100%;
+                margin-bottom: 4pt;
+            }
+            .print-card-id {
+                font-size: 14pt;
+                font-weight: 800;
+                font-family: var(--font-mono);
+            }
+            .print-card-grid-container {
+                display: flex;
+                justify-content: center;
+                flex: 1;
+            }
+
+            /* Grid fills the card — much larger than before */
+            .print-grid-wrapper {
+                width: 240pt !important;
+                height: 240pt !important;
+            }
+            .print-grid-wrapper .puzzle-grid {
+                border: 2pt solid black !important;
+                border-radius: 0 !important;
+            }
+            .print-grid-wrapper .puzzle-cell {
+                background: white !important;
+                border: 1pt solid #666 !important;
+            }
+            .print-grid-wrapper .cell-obstacle svg rect { fill: black !important; }
+            .print-grid-wrapper .cell-goal svg rect { fill: black !important; }
+            .print-grid-wrapper .ship-abs svg {
+                filter: none !important;
+            }
+
+            /* GM Key table */
+            .gm-key-table {
+                width: 100%;
+                border-collapse: collapse;
+                font-family: var(--font-mono);
+                font-size: 9pt;
+            }
+            .gm-key-table th {
+                background: #222;
+                color: white;
+                padding: 4pt 8pt;
+                text-align: left;
+                font-weight: 700;
+            }
+            .gm-key-table td {
+                border-bottom: 0.5pt solid #ccc;
+                padding: 3pt 8pt;
+            }
+            .gm-id { font-weight: 700; width: 30pt; }
+            .gm-solution { font-weight: 600; }
+            .gm-reward { text-align: right; width: 60pt; }
+            .gm-size { text-align: right; width: 50pt; }
+            .gm-diff { font-size: 8pt; color: #555; }
+        }
+
+        /* ── Responsive ────────────────────────────────────── */
+        @media (max-width: 768px) {
+            .main-layout {
+                grid-template-columns: 1fr;
+            }
+            .sidebar {
+                position: static;
+            }
+            .preview-card {
+                flex-direction: column;
+            }
+            .puzzle-grid-wrapper {
+                width: 100%;
+                aspect-ratio: 1;
+                height: auto;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- MAIN SCREEN UI -->
+    <div id="app-container" class="app-container">
+        <header class="app-header">
+            <h1 class="app-title">Puzzle Generator</h1>
+            <p class="app-subtitle">Procedurally generated Ice-Cave archipelago maps (Module 2) — BFS-validated</p>
+        </header>
+
+        <div class="main-layout">
+            <!-- Controls Sidebar -->
+            <aside class="sidebar">
+                <h2>Parameters</h2>
+
+                <div class="field">
+                    <label for="seed-input">PRNG Seed</label>
+                    <input type="text" id="seed-input" value="MAZURY2026">
+                </div>
+
+                <div class="field">
+                    <label for="count-input">Puzzle Count</label>
+                    <input type="number" id="count-input" value="10" min="1" max="100">
+                </div>
+
+                <div class="field-row">
+                    <div class="field">
+                        <label for="min-size-input">Min Size</label>
+                        <input type="number" id="min-size-input" value="7" min="7" max="10">
+                    </div>
+                    <div class="field">
+                        <label for="max-size-input">Max Size</label>
+                        <input type="number" id="max-size-input" value="10" min="7" max="10">
+                    </div>
+                </div>
+
+                <div class="field-row">
+                    <div class="field">
+                        <label for="min-len-input">Min Slides</label>
+                        <input type="number" id="min-len-input" value="5" min="3" max="15">
+                    </div>
+                    <div class="field">
+                        <label for="max-len-input">Max Slides</label>
+                        <input type="number" id="max-len-input" value="10" min="3" max="15">
+                    </div>
+                </div>
+
+                <div class="btn-group">
+                    <button id="generate-btn" class="btn btn-primary">
+                        Generate Maps
+                    </button>
+                    <button id="export-btn" class="btn btn-export" disabled>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                        </svg>
+                        Export game.json
+                    </button>
+                    <button id="print-btn" class="btn btn-secondary" disabled>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/>
+                        </svg>
+                        Print Sheets & GM Key
+                    </button>
+                </div>
+            </aside>
+
+            <!-- Preview Area -->
+            <main>
+                <div class="preview-area-header" style="display:flex; justify-content:space-between; align-items:flex-end; margin-bottom:1rem;">
+                    <h2 style="font-size:1.25rem; font-weight:600; color:white;">Generated Maps Preview</h2>
+                </div>
+
+                <div id="preview-container" class="preview-area">
+                    <p class="empty-msg">
+                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="display:block; margin: 0 auto 0.75rem; opacity: 0.4;">
+                            <path d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"/>
+                        </svg>
+                        Click <strong>Generate Maps</strong> to create puzzles
+                    </p>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- PRINT LAYOUT -->
+    <div id="print-container">
+        <!-- populated by JS -->
+    </div>
+
+    <script type="module" src="app.js"></script>
+</body>
+</html>
