@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "tcg-preview",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [".claude/static-server.mjs", "tcg_generator", "8777"],
+      "port": 8777
+    }
+  ]
+}

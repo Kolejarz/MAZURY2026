@@ -1,0 +1,123 @@
+{
+  "$schema": "../src/core/game.schema.json",
+  "seed": 1337,
+  "config": {
+    "gridSize": 26,
+    "teams": 12,
+    "startStrategy": "team-chosen",
+    "valuePlacement": "random",
+    "die": "d12",
+    "lootEveryStop": true,
+    "weatherModel": {
+      "tailwind":  { "X": 4, "heading": "straight", "lootMod": 0 },
+      "headwind":  { "X": 2, "heading": "straight", "lootMod": 0 },
+      "crosswind": { "X": 3, "heading": "diagonal", "lootMod": 0 },
+      "storm":     { "X": 4, "heading": "straight", "lootMod": -1 },
+      "still":     { "X": 2, "heading": "straight", "lootMod": 2 }
+    },
+    "dieFaces": [
+      { "type": "compass" }, { "type": "compass" }, { "type": "compass" },
+      { "type": "compass" }, { "type": "compass" }, { "type": "compass" },
+      { "type": "compass" }, { "type": "compass" },
+      { "type": "still" }, { "type": "still" },
+      { "type": "storm" }, { "type": "storm" }
+    ],
+    "edgeRule": "ricochet",
+    "turnOrder": "fixed-rotating",
+    "equalTurns": true,
+    "sailingCostsWinds": false,
+    "winds": {
+      "types": ["up", "down", "left", "right", "joker"],
+      "directional": true,
+      "pool": { "up": 0.22, "down": 0.22, "left": 0.22, "right": 0.22, "joker": 0.12 }
+    },
+    "startState": { "winds": "balanced-6", "rescuePoints": 0, "puzzles": 2 },
+    "puzzleHoldLimit": null,
+    "scoring": {
+      "rescuePoints": { "rpMaxPerVisit": 8 },
+      "rescuedAnimals": { "perVisitCap": 3, "flat": true, "byCategory": true }
+    }
+  },
+  "calendar": {
+    "baseline": [
+      { "day": 1,  "excluded": false, "turns": 1, "globalMod": 0 },
+      { "day": 2,  "excluded": false, "turns": 1, "globalMod": 0 },
+      { "day": 3,  "excluded": false, "turns": 1, "globalMod": 0 },
+      { "day": 4,  "excluded": false, "turns": 1, "globalMod": 0 },
+      { "day": 5,  "excluded": false, "turns": 1, "globalMod": 2 },
+      { "day": 6,  "excluded": false, "turns": 1, "globalMod": 2 },
+      { "day": 7,  "excluded": true,  "turns": 0, "globalMod": 0 },
+      { "day": 8,  "excluded": false, "turns": 1, "globalMod": 2 },
+      { "day": 9,  "excluded": false, "turns": 1, "globalMod": 3 },
+      { "day": 10, "excluded": false, "turns": 1, "globalMod": 3 },
+      { "day": 11, "excluded": true,  "turns": 0, "globalMod": 0 },
+      { "day": 12, "excluded": false, "turns": 1, "globalMod": 3 },
+      { "day": 13, "excluded": false, "turns": 1, "globalMod": 4 },
+      { "day": 14, "excluded": false, "turns": 2, "globalMod": 4 }
+    ],
+    "turnRange": [12, 18]
+  },
+  "rubberBand": {
+    "baseline": { "rule": "bottom-N-gap-bump", "n": 4, "bumpCap": 3, "gapDiv": 10 },
+    "override": { "maxBump": 2, "extraSailAllowed": true, "mustLog": true }
+  },
+  "lootTable": [
+    { "value": 1, "reward": { "kind": "winds", "n": 1 } },
+    { "value": 2, "reward": { "kind": "winds", "n": 2 } },
+    { "value": 3, "reward": { "kind": "winds", "n": 2 } },
+    { "value": 4, "reward": { "kind": "rescuePoints", "n": 1 } },
+    { "value": 5, "reward": { "kind": "puzzle", "byIndex": true } },
+    { "value": 6, "reward": { "kind": "animalSave", "rescuePoints": 3 } }
+  ],
+  "map": {
+    "secretValues": [
+      { "coord": "A1",  "value": 1, "reward": { "kind": "winds", "n": 1 } },
+      { "coord": "C21", "value": 6, "reward": { "kind": "animalSave", "rescuePoints": 3 } },
+      { "coord": "F25", "value": 2, "reward": { "kind": "winds", "n": 2 } },
+      { "coord": "K7",  "value": 2, "reward": { "kind": "winds", "n": 2 } },
+      { "coord": "N14", "value": 5, "reward": { "kind": "puzzle", "byIndex": true } },
+      { "coord": "Q3",  "value": 4, "reward": { "kind": "rescuePoints", "n": 1 } },
+      { "coord": "T18", "value": 3, "reward": { "kind": "winds", "n": 2 } },
+      { "coord": "Z26", "value": 5, "reward": { "kind": "puzzle", "byIndex": true } }
+    ]
+  },
+  "puzzles": [
+    {
+      "id": "Z-014",
+      "index": 37,
+      "difficulty": { "len": 4, "size": 7 },
+      "grid": [],
+      "ship": "B2",
+      "goal": "F4",
+      "solution": ["U", "L", "U", "R"],
+      "rewardIndex": 37
+    },
+    {
+      "id": "Z-002",
+      "index": 8,
+      "difficulty": { "len": 2, "size": 5 },
+      "grid": [],
+      "ship": "A1",
+      "goal": "C3",
+      "solution": ["R", "D"],
+      "rewardIndex": 8
+    }
+  ],
+  "puzzleRewardCurve": { "shape": "normal", "min": "low(easy)", "max": "high(hard)" },
+  "deck": {
+    "domowe": [
+      { "number": 1, "name": "Pies", "category": "domowe", "image": "", "facts": "Pies to wierny przyjaciel człowieka." },
+      { "number": 2, "name": "Kot", "category": "domowe", "image": "", "facts": "Kot potrafi spać nawet 16 godzin dziennie." }
+    ],
+    "wymarle": [
+      { "number": 3, "name": "Mamut", "category": "wymarle", "image": "", "facts": "Mamuty żyły w epoce lodowcowej." },
+      { "number": 4, "name": "Dodo", "category": "wymarle", "image": "", "facts": "Dodo nie potrafił latać i wyginął przez ludzi." }
+    ],
+    "jadowite": [
+      { "number": 5, "name": "Skorpion", "category": "jadowite", "image": "", "facts": "Skorpion świeci w świetle UV." }
+    ]
+  },
+  "milestones": [
+    { "category": "wymarle", "reward": "Ogólnoobozowa nagroda za skompletowanie kategorii (TBD)." }
+  ]
+}

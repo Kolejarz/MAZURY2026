@@ -1,0 +1,327 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ocean-rescue/game.schema.json",
+  "title": "Ocean Rescue game.json",
+  "description": "The single seed bundle shared by all modules. Authoritative ruleset: docs/mechanics.md; schema prose: docs/design/gm-tools-ux.md §4. NOTE: some rules cannot be expressed in JSON Schema (e.g. winds.pool summing to 1, lootTable puzzle indices existing in puzzles[], secretValues coords being unique/on-grid). Those are enforced semantically by core.validateGame() — this schema covers structure, types, and the locked-invariant consts.",
+  "type": "object",
+  "required": ["seed", "config", "calendar", "rubberBand", "lootTable", "map", "puzzles", "deck"],
+  "additionalProperties": true,
+  "properties": {
+    "seed": {
+      "description": "Single seed -> identical binder + map. Number or string.",
+      "type": ["integer", "string"]
+    },
+    "config": {
+      "type": "object",
+      "required": [
+        "gridSize", "teams", "startStrategy", "valuePlacement", "die",
+        "lootEveryStop", "weatherModel", "dieFaces", "edgeRule", "turnOrder",
+        "equalTurns", "sailingCostsWinds", "winds", "startState",
+        "puzzleHoldLimit", "scoring"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "gridSize": { "const": 26, "description": "Locked: 26x26, coords A1-Z26." },
+        "teams": { "type": "integer", "minimum": 1, "default": 12 },
+        "startStrategy": { "const": "team-chosen", "description": "D6a - teams pick their own start at setup." },
+        "valuePlacement": { "const": "random", "description": "D7 - no gradient." },
+        "die": { "const": "d12" },
+        "lootEveryStop": { "const": true, "description": "§4 - loot every unvisited stop. Must be true." },
+        "weatherModel": {
+          "type": "object",
+          "required": ["tailwind", "headwind", "crosswind", "storm", "still"],
+          "additionalProperties": false,
+          "properties": {
+            "tailwind": { "$ref": "#/$defs/weatherFace" },
+            "headwind": { "$ref": "#/$defs/weatherFace" },
+            "crosswind": { "$ref": "#/$defs/weatherFace" },
+            "storm": { "$ref": "#/$defs/weatherFace" },
+            "still": { "$ref": "#/$defs/weatherFace" }
+          }
+        },
+        "dieFaces": {
+          "description": "Exactly 12 physical d12 faces; counts are the simulator's luck lever. Compass faces carry no baked direction.",
+          "type": "array",
+          "minItems": 12,
+          "maxItems": 12,
+          "items": {
+            "type": "object",
+            "required": ["type"],
+            "additionalProperties": false,
+            "properties": {
+              "type": { "enum": ["compass", "still", "storm"] }
+            }
+          }
+        },
+        "edgeRule": { "const": "ricochet", "description": "D2/D9 - continuous, always deliver X, jump visited, no becalmed." },
+        "turnOrder": { "const": "fixed-rotating", "description": "D13." },
+        "equalTurns": { "const": true, "description": "§3 - hard invariant. Game ends only on fixed equal turn count." },
+        "sailingCostsWinds": { "const": false, "description": "D4 - sailing is free." },
+        "winds": {
+          "type": "object",
+          "required": ["types", "directional", "pool"],
+          "additionalProperties": false,
+          "properties": {
+            "types": {
+              "type": "array",
+              "items": { "enum": ["up", "down", "left", "right", "joker"] },
+              "minItems": 5,
+              "maxItems": 5,
+              "uniqueItems": true
+            },
+            "directional": { "const": true },
+            "pool": {
+              "description": "Draw weights over the 5 types incl. Joker rarity (D5). Must sum to 1 (enforced by core.validateGame).",
+              "type": "object",
+              "required": ["up", "down", "left", "right", "joker"],
+              "additionalProperties": false,
+              "properties": {
+                "up": { "type": "number", "minimum": 0, "maximum": 1 },
+                "down": { "type": "number", "minimum": 0, "maximum": 1 },
+                "left": { "type": "number", "minimum": 0, "maximum": 1 },
+                "right": { "type": "number", "minimum": 0, "maximum": 1 },
+                "joker": { "type": "number", "minimum": 0, "maximum": 1 }
+              }
+            }
+          }
+        },
+        "startState": {
+          "type": "object",
+          "required": ["winds", "rescuePoints", "puzzles"],
+          "additionalProperties": false,
+          "properties": {
+            "winds": { "description": "D6b - fixed balanced starter set (not a random draw).", "type": ["string", "integer"] },
+            "rescuePoints": { "const": 0 },
+            "puzzles": { "type": "integer", "minimum": 0, "description": "Starter Archipelago Maps (D6b = 2)." }
+          }
+        },
+        "puzzleHoldLimit": { "type": "null", "description": "D10 - unlimited holding; null only." },
+        "scoring": {
+          "type": "object",
+          "required": ["rescuePoints", "rescuedAnimals"],
+          "additionalProperties": false,
+          "properties": {
+            "rescuePoints": {
+              "type": "object",
+              "required": ["rpMaxPerVisit"],
+              "additionalProperties": false,
+              "properties": {
+                "rpMaxPerVisit": { "type": "integer", "minimum": 0, "description": "D-rpcap - RP banked per visit; overflow lost, Winds kept." }
+              }
+            },
+            "rescuedAnimals": {
+              "type": "object",
+              "required": ["perVisitCap", "flat", "byCategory"],
+              "additionalProperties": false,
+              "properties": {
+                "perVisitCap": { "type": "integer", "minimum": 0, "description": "D-savecap = 3." },
+                "flat": { "const": true, "description": "D12 - all animals equal, no face value." },
+                "byCategory": { "const": true }
+              }
+            }
+          }
+        }
+      }
+    },
+    "calendar": {
+      "description": "D9 - LIVING calendar; baseline plan + a turn-count range the simulator models.",
+      "type": "object",
+      "required": ["baseline", "turnRange"],
+      "additionalProperties": false,
+      "properties": {
+        "baseline": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["day", "excluded", "turns", "globalMod"],
+            "additionalProperties": false,
+            "properties": {
+              "day": { "type": "integer", "minimum": 1 },
+              "excluded": { "type": "boolean" },
+              "turns": { "type": "integer", "minimum": 0 },
+              "globalMod": { "type": ["integer", "string"] }
+            }
+          }
+        },
+        "turnRange": {
+          "type": "array",
+          "items": { "type": "integer", "minimum": 0 },
+          "minItems": 2,
+          "maxItems": 2
+        }
+      }
+    },
+    "rubberBand": {
+      "description": "D14 - HYBRID: printed baseline + bounded logged override.",
+      "type": "object",
+      "required": ["baseline", "override"],
+      "additionalProperties": false,
+      "properties": {
+        "baseline": {
+          "type": "object",
+          "required": ["rule", "n", "bumpCap", "gapDiv"],
+          "additionalProperties": false,
+          "properties": {
+            "rule": { "const": "bottom-N-gap-bump" },
+            "n": { "type": "integer", "minimum": 0 },
+            "bumpCap": { "type": "integer", "minimum": 0 },
+            "gapDiv": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "override": {
+          "type": "object",
+          "required": ["maxBump", "extraSailAllowed", "mustLog"],
+          "additionalProperties": false,
+          "properties": {
+            "maxBump": { "type": "integer", "minimum": 0 },
+            "extraSailAllowed": { "type": "boolean", "description": "Extra MOVES inside a turn, never an extra turn (§3 holds)." },
+            "mustLog": { "type": "boolean" }
+          }
+        }
+      }
+    },
+    "lootTable": {
+      "description": "M3 - tile value -> reward. Wind rewards: n = DRAW count, type random at table.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["value", "reward"],
+        "additionalProperties": false,
+        "properties": {
+          "value": { "type": "integer" },
+          "reward": { "$ref": "#/$defs/reward" }
+        }
+      }
+    },
+    "map": {
+      "description": "M1 - the A1 grid prints NO values; secretValues is the GM-only table (TAB 2). No pre-placed starts (D6a).",
+      "type": "object",
+      "required": ["secretValues"],
+      "additionalProperties": false,
+      "properties": {
+        "secretValues": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["coord", "value", "reward"],
+            "additionalProperties": false,
+            "properties": {
+              "coord": { "$ref": "#/$defs/coord" },
+              "value": { "type": "integer" },
+              "reward": { "$ref": "#/$defs/reward" }
+            }
+          }
+        }
+      }
+    },
+    "puzzles": {
+      "description": "M2 - indexed Archipelago Maps; solution is the GM key, NEVER printed.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "index", "difficulty", "ship", "goal", "solution", "rewardIndex"],
+        "additionalProperties": true,
+        "properties": {
+          "id": { "type": "string" },
+          "index": { "type": "integer" },
+          "difficulty": {
+            "type": "object",
+            "required": ["len", "size"],
+            "additionalProperties": true,
+            "properties": {
+              "len": { "type": "integer", "minimum": 1 },
+              "size": { "type": "integer", "minimum": 5, "maximum": 8 }
+            }
+          },
+          "grid": { "type": "array" },
+          "ship": { "type": "string" },
+          "goal": { "type": "string" },
+          "solution": {
+            "type": "array",
+            "items": { "enum": ["U", "D", "L", "R"] }
+          },
+          "rewardIndex": { "type": "integer" }
+        }
+      }
+    },
+    "puzzleRewardCurve": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "shape": { "type": "string" },
+        "min": { "type": "string" },
+        "max": { "type": "string" }
+      }
+    },
+    "deck": {
+      "description": "M5 - unique FLAT cards grouped by category. No vp / no tier - all animals equal (D12). Category keys are extensible.",
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": ["number", "name", "category"],
+          "additionalProperties": true,
+          "properties": {
+            "number": { "type": "integer", "description": "Stable unique card id." },
+            "name": { "type": "string" },
+            "category": { "type": "string" },
+            "image": { "type": "string" },
+            "facts": { "type": "string" }
+          }
+        }
+      }
+    },
+    "milestones": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["category", "reward"],
+        "additionalProperties": false,
+        "properties": {
+          "category": { "type": "string" },
+          "reward": { "type": "string" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "weatherFace": {
+      "type": "object",
+      "required": ["X", "heading", "lootMod"],
+      "additionalProperties": false,
+      "properties": {
+        "X": { "type": "integer", "minimum": 0, "description": "Move count (placeholder; simulator tunes)." },
+        "heading": { "enum": ["straight", "diagonal"] },
+        "lootMod": { "type": "integer", "description": "Per-tile loot shift (Storm -1 / Still +2 placeholders)." }
+      }
+    },
+    "coord": {
+      "type": "string",
+      "description": "Letter-number coord A1-Z26. Leading zero accepted on input; canonical output has none.",
+      "pattern": "^[A-Z](0?[1-9]|1[0-9]|2[0-6])$"
+    },
+    "reward": {
+      "type": "object",
+      "required": ["kind"],
+      "additionalProperties": true,
+      "properties": {
+        "kind": { "enum": ["winds", "puzzle", "animalSave", "rescuePoints"] },
+        "n": { "type": "integer", "minimum": 0, "description": "DRAW/point count for winds & rescuePoints." },
+        "byIndex": { "type": "boolean", "description": "For kind=puzzle: grant an indexed Archipelago Map from puzzles[]." },
+        "rescuePoints": { "type": "integer", "description": "For kind=animalSave: bundled RP." }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "winds" } } },
+          "then": { "required": ["n"] }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "puzzle" } } },
+          "then": { "required": ["byIndex"] }
+        }
+      ]
+    }
+  }
+}
