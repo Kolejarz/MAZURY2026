@@ -335,11 +335,6 @@ function renderPrintLayout(puzzles, container) {
     container.innerHTML = '';
 
     // ── Handouts section ──
-    const handoutsTitle = document.createElement('h1');
-    handoutsTitle.className = 'print-section-title';
-    handoutsTitle.textContent = 'Mapy Archipelagu';
-    container.appendChild(handoutsTitle);
-
     const handoutsGrid = document.createElement('div');
     handoutsGrid.className = 'print-handouts-grid';
 
@@ -347,10 +342,15 @@ function renderPrintLayout(puzzles, container) {
         const card = document.createElement('div');
         card.className = 'print-card';
 
-        // Just the number in the corner + the big grid
+        // Number of stars based on calculated difficulty (rewardIndex)
+        let stars = '★';
+        if (puzzle.rewardIndex >= 3 && puzzle.rewardIndex <= 5) stars = '★★';
+        if (puzzle.rewardIndex >= 6) stars = '★★★';
+
+        // Just the number and stars in the corner + the big grid at the bottom
         const header = document.createElement('div');
         header.className = 'print-card-header';
-        header.innerHTML = `<span class="print-card-id">#${puzzle.id}</span>`;
+        header.innerHTML = `<span class="print-card-id">#${puzzle.id} <span style="font-size: 0.7em; color: #555;">${stars}</span></span>`;
 
         // Grid — takes up all available space
         const gridContainer = document.createElement('div');

@@ -312,7 +312,7 @@ function buildTraps(rng, obstacles, size, start, goal) {
     }
 
     // For each waypoint (except the last = goal), try to build a trap
-    const trapAttempts = Math.min(waypoints.length - 1, 6);
+    const trapAttempts = Math.min(waypoints.length - 1, 3);
     const indices = shuffleArray(rng, [...Array(waypoints.length - 1).keys()]);
 
     let trapsPlaced = 0;
@@ -471,14 +471,11 @@ function fillNoise(rng, obstacles, size, start, goal, targetDensity) {
 
         if (obstacles.has(key) || protectedCells.has(key)) continue;
 
-        // Spatial rule 1: max 1 orthogonal obstacle neighbor → thin lines only
-        if (countOrthoNeighbors(obstacles, r, c) > 1) continue;
+        // Spatial rule 1: strictly isolated (0 orthogonal neighbors)
+        if (countOrthoNeighbors(obstacles, r, c) > 0) continue;
 
-        // Spatial rule 2: max 1 diagonal obstacle neighbor
-        if (countDiagNeighbors(obstacles, r, c) > 1) continue;
-
-        // Spatial rule 3: must not complete a 2×2 obstacle block
-        if (wouldFormClump(obstacles, r, c)) continue;
+        // Spatial rule 2: strictly isolated (0 diagonal neighbors)
+        if (countDiagNeighbors(obstacles, r, c) > 0) continue;
 
         obstacles.add(key);
 
@@ -495,6 +492,50 @@ function fillNoise(rng, obstacles, size, start, goal, targetDensity) {
 /* ── Main generator ────────────────────────────────────────────────── */
 
 /**
+ * Calculate quota for each length to approximate a normal distribution.
+ */
+function getNormalDistributionQuotas(count, min, max) {
+    const quotas = {};
+    const mean = (min + max) / 2;
+    // Standard deviation so that ~95% falls within [min, max] (i.e. +/- 2 stddev)
+    const stdDev = (max - min) / 4 || 1; 
+
+    let totalWeight = 0;
+    const weights = {};
+    for (let i = min; i <= max; i++) {
+        const weight = Math.exp(-0.5 * Math.pow((i - mean) / stdDev, 2));
+        weights[i] = weight;
+        totalWeight += weight;
+    }
+
+    let allocated = 0;
+    for (let i = min; i <= max; i++) {
+        quotas[i] = Math.round((weights[i] / totalWeight) * count);
+        allocated += quotas[i];
+    }
+
+    // Fix rounding errors to match exactly `count`
+    let diff = count - allocated;
+    while (diff !== 0) {
+        // Sort keys by distance to mean so we adjust the peak first
+        const sortedKeys = Object.keys(quotas).map(Number).sort((a, b) => Math.abs(a - mean) - Math.abs(b - mean));
+        for (const k of sortedKeys) {
+            if (diff > 0) {
+                quotas[k]++;
+                diff--;
+                if (diff === 0) break;
+            } else if (diff < 0 && quotas[k] > 0) {
+                quotas[k]--;
+                diff++;
+                if (diff === 0) break;
+            }
+        }
+    }
+
+    return quotas;
+}
+
+/**
  * Generate `count` valid, solvable, non-trivial Ice-Cave puzzles.
  */
 export function generatePuzzles(seed, count, minSize, maxSize, targetMinLen, targetMaxLen) {
@@ -503,10 +544,25 @@ export function generatePuzzles(seed, count, minSize, maxSize, targetMinLen, tar
     let attempts = 0;
     const maxAttempts = count * 2000;
 
+    // Calculate normal distribution quotas
+    const lengthQuotas = getNormalDistributionQuotas(count, targetMinLen, targetMaxLen);
+    const currentCounts = {};
+    for (let i = targetMinLen; i <= targetMaxLen; i++) currentCounts[i] = 0;
+
     while (puzzles.length < count && attempts < maxAttempts) {
         attempts++;
         const size = minSize + rng.int(maxSize - minSize + 1);
-        const targetLen = targetMinLen + rng.int(targetMaxLen - targetMinLen + 1);
+
+        // Find which lengths still need puzzles
+        const neededLengths = [];
+        for (const len in lengthQuotas) {
+            if (currentCounts[len] < lengthQuotas[len]) neededLengths.push(Number(len));
+        }
+        
+        if (neededLengths.length === 0) break; // Finished quotas
+
+        // Pick a target length from the remaining needed lengths
+        const targetLen = neededLengths[rng.int(neededLengths.length)];
 
         // Phase 1: Reverse-construct a puzzle skeleton
         const constructed = reverseConstruct(rng.fork(`rc-${attempts}`), size, targetLen);
@@ -517,17 +573,23 @@ export function generatePuzzles(seed, count, minSize, maxSize, targetMinLen, tar
         // Phase 2: Build directed trap paths (red herrings)
         buildTraps(rng.fork(`trap-${attempts}`), obstacles, size, start, goal);
 
-        // Phase 3: Fill remaining density with random obstacles (25-40%)
-        const noiseDensity = 0.25 + rng.next() * 0.15;
+        // Phase 3: Fill remaining density with random obstacles (10-25%)
+        const noiseDensity = 0.10 + rng.next() * 0.15;
         fillNoise(rng.fork(`noise-${attempts}`), obstacles, size, start, goal, noiseDensity);
 
         // Phase 4: BFS-validate and measure quality
         const result = solveBFS(obstacles, size, start, goal);
         if (!result) continue;
-        if (result.solution.length < targetMinLen || result.solution.length > targetMaxLen) continue;
+        const finalLen = result.solution.length;
+        if (finalLen < targetMinLen || finalLen > targetMaxLen) continue;
+        
+        // Ensure we don't exceed the quota for this length
+        if (currentCounts[finalLen] >= lengthQuotas[finalLen]) continue;
 
         // Phase 5: Quality filter — reject "obviously easy" puzzles
         if (!isQualityPuzzle(result, size, obstacles, start, goal)) continue;
+        
+        currentCounts[finalLen]++;
 
         // Build obstacle coord list for export
         const obstacleCoords = [];

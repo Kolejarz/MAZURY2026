@@ -386,6 +386,8 @@
         }
 
         @media print {
+            @page { margin: 0; }
+            
             #app-container { display: none !important; }
             #print-container { display: block !important; }
 
@@ -411,23 +413,27 @@
             }
 
             .print-handouts-grid {
-                display: grid;
-                grid-template-columns: 1fr 1fr;
-                gap: 10pt;
+                display: flex;
+                flex-wrap: wrap;
             }
 
             .print-card {
-                border: 2.5pt solid black;
-                padding: 8pt;
+                width: 105mm;
+                height: 148.5mm;
+                box-sizing: border-box;
+                border-right: 1px dashed #ccc;
+                border-bottom: 1px dashed #ccc;
+                padding: 10mm;
                 break-inside: avoid;
                 page-break-inside: avoid;
                 display: flex;
                 flex-direction: column;
                 align-items: center;
+                justify-content: flex-end; /* map at bottom */
             }
             .print-card-header {
                 width: 100%;
-                margin-bottom: 4pt;
+                margin-bottom: auto; /* pushes everything else to bottom */
             }
             .print-card-id {
                 font-size: 14pt;
@@ -437,13 +443,14 @@
             .print-card-grid-container {
                 display: flex;
                 justify-content: center;
-                flex: 1;
+                /* map sits at bottom, sketch space above */
             }
 
             /* Grid fills the card — much larger than before */
+            /* Grid fills available space at bottom, restricted so it doesn't overflow */
             .print-grid-wrapper {
-                width: 240pt !important;
-                height: 240pt !important;
+                width: 80mm !important;
+                height: 80mm !important;
             }
             .print-grid-wrapper .puzzle-grid {
                 border: 2pt solid black !important;
