@@ -83,6 +83,7 @@ export function reflect(heading, wall) {
 const OPPOSITE = { "N": "S", "S": "N", "E": "W", "W": "E" };
 
 export function faceToVector(declaredDir, face, rolledCompass, weatherModel) {
+    if (!weatherModel) throw new Error("faceToVector requires weatherModel (pass game.config.weatherModel)");
     let heading, windKind, X, lootMod;
     
     if (face.type === "compass") {
@@ -208,6 +209,21 @@ export function validateGame(game) {
     const puzzleIndices = new Set(game.puzzles ? game.puzzles.map(p => p.index) : []);
     const validKinds = new Set(["winds", "puzzle", "animalSave", "rescuePoints"]);
 
+    // A puzzle reward must be resolvable to a concrete Archipelago Map: either drawn at the table
+    // (byIndex:true, the canonical form per the schema) or pinned to an explicit index that exists in
+    // puzzles[]. A puzzle reward that is neither cannot be granted by the simulator -> hard-fail.
+    function checkPuzzleReward(reward, path) {
+        if (!reward || reward.kind !== "puzzle") return;
+        if (reward.byIndex === true) return;
+        if (reward.index !== undefined) {
+            if (!puzzleIndices.has(reward.index)) {
+                throw new GameValidationError(`Puzzle index ${reward.index} not found in puzzles`, path);
+            }
+            return;
+        }
+        throw new GameValidationError("Puzzle reward must set byIndex:true or a valid index", path);
+    }
+
     for (let i = 0; i < game.map.secretValues.length; i++) {
         const sv = game.map.secretValues[i];
         try {
@@ -226,16 +242,16 @@ export function validateGame(game) {
         if (!reward || !validKinds.has(reward.kind)) {
             throw new GameValidationError(`Invalid reward kind: ${reward?.kind}`, `map.secretValues[${i}].reward`);
         }
+        checkPuzzleReward(reward, `map.secretValues[${i}].reward`);
     }
 
     if (game.lootTable) {
         for (let i = 0; i < game.lootTable.length; i++) {
             const reward = game.lootTable[i].reward;
-            if (reward && reward.kind === "puzzle" && reward.index !== undefined) {
-                if (!puzzleIndices.has(reward.index)) {
-                    throw new GameValidationError(`Puzzle index ${reward.index} not found in puzzles`, `lootTable[${i}].reward`);
-                }
+            if (reward && !validKinds.has(reward.kind)) {
+                throw new GameValidationError(`Invalid reward kind: ${reward.kind}`, `lootTable[${i}].reward`);
             }
+            checkPuzzleReward(reward, `lootTable[${i}].reward`);
         }
     }
 
@@ -258,12 +274,13 @@ export function lintGame(game) {
 }
 
 export function resolveTurn(ctx) {
-    const { game, visited, team, declaredDir, dieFaceIndex, rolledCompass, globalMod, rubberBand } = ctx;
+    const { game, visited, team, declaredDir, dieFaceIndex, rolledCompass, globalMod, rubberBand, globalXMod } = ctx;
 
     const face = game.config.dieFaces[dieFaceIndex];
     const { heading, windKind, X: baseX, lootMod } = faceToVector(declaredDir, face, rolledCompass, game.config.weatherModel);
-    
-    let X = baseX;
+
+    // §4.1 step 3: apply any global per-turn move-count shift (e.g. "+1 move from Day 5"), then clamp X >= 0.
+    let X = baseX + (globalXMod || 0);
     if (X < 0) X = 0;
 
     const stopsCoords = sailStops(team.pos, heading, X, visited, game.config.gridSize);
@@ -312,7 +329,8 @@ export function resolveTurn(ctx) {
         stops,
         newPos,
         newlyVisited,
-        capped: false
+        capped: false,                  // informational; the caller meters per-visit RP caps via applyRescuePoints
+        shortStopped: stops.length < X  // §4.3 board-starvation fact: fewer reachable unvisited tiles than X
     };
 }
 
@@ -356,6 +374,8 @@ export function drawWinds(rng, pool, n) {
     return drawn;
 }
 
+// NOTE: the caller must reset team.rescuePointsThisVisit to 0 at the start of each visit/turn;
+// this helper accumulates within a visit to enforce the per-visit cap (overflow lost, resources kept).
 export function applyRescuePoints(team, gained, rpMaxPerVisit) {
     team.rescuePointsThisVisit = (team.rescuePointsThisVisit || 0) + gained;
     let banked = gained;

@@ -7,7 +7,7 @@ The core engine follows a strict single-consumer rule: the `resolveTurn` functio
 The following functions are exported and stable:
 - **prng:** `makeRng(seed)`
 - **coords:** `parseCoord(s)`, `formatCoord({col,row})`, `isOffGrid({col,row}, gridSize)`
-- **geometry:** `step(coord, heading)`, `reflect(heading, wall)`, `faceToVector(...)`, `sailStops(...)`
+- **geometry:** `step(coord, heading)`, `reflect(heading, wall)`, `faceToVector(declaredDir, face, rolledCompass, weatherModel)`, `sailStops(pos, heading, X, visited, gridSize)`
 - **schema:** `validateGame(game)`, `lintGame(game)`
 - **turn:** `resolveTurn(ctx)`
 - **state & scoring:** `makeInitialState(game)`, `applyStart(state, teamId, coord)`, `drawWinds(rng, pool, n)`, `applyRescuePoints(team, gained, rpMaxPerVisit)`, `applyAnimalSaves(team, chosenCards, perVisitCap)`, `assertEqualTurns(state)`

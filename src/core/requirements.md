@@ -159,7 +159,9 @@ Core owns the **schema definition and a `validateGame(game)` function**. It does
   decisions; a game with them off is not Ocean Rescue.
 - `dieFaces.length !== 12`, or any face not in `{compass, still, storm}`.
 - `winds.pool` not summing to 1 (±1e-6), or types not exactly the 5 listed.
-- Any `lootTable` reward of `kind:"puzzle"` whose resolved index has no matching `puzzles[].index`.
+- Any `kind:"puzzle"` reward (in `lootTable` **or** `map.secretValues`) that is unresolvable: it must set
+  `byIndex:true` (canonical — the specific map is drawn at the table, like Winds) **or** an explicit `index`
+  that exists in `puzzles[]`. Neither present, or an `index` with no matching `puzzles[].index` → hard-fail.
 - Any `secretValues[].coord` that fails `parseCoord` or lies off-grid, or duplicate coords.
 - `rpMaxPerVisit < 0`, `perVisitCap < 0`.
 - Reward `kind` not in the closed set (§4.5).
@@ -190,8 +192,9 @@ ctx = {
   declaredDir,          // "N" | "S" | "E" | "W"
   dieFaceIndex,         // 0..11 — which physical d12 face came up (sim rolls it)
   rolledCompass,        // "N"|"S"|"E"|"W" — REQUIRED when that face is type "compass" (see 4.2); else ignored
-  globalMod,            // integer from the day's calendar (applied live by GM in reality)
-  rubberBand            // integer bump for this team this turn (0 if none)
+  globalMod,            // integer LOOT modifier from the day's calendar (applied live by GM in reality)
+  rubberBand,           // integer loot bump for this team this turn (0 if none)
+  globalXMod            // OPTIONAL integer global MOVE-count shift (step 3; e.g. "+1 move from Day 5"); 0/absent = none
 }
 
 TurnResult = {
@@ -203,7 +206,8 @@ TurnResult = {
   ],
   newPos,               // coord of last stop, or unchanged team.pos if stops empty
   newlyVisited: [coord, ...],  // === stops.map(s=>s.coord); the caller adds these to `visited`
-  capped: false         // true if RP overflow occurred this visit (informational; see §6)
+  capped: false,        // always false here — informational; the caller meters RP overflow via applyRescuePoints (§6)
+  shortStopped: false   // true when fewer than X unvisited tiles were reachable (board-starvation fact, §4.3)
 }
 ```
 - `resolveTurn` **does not mutate** `ctx.visited` or `ctx.team`. It **returns** what changed; the caller
@@ -378,7 +382,7 @@ export function isOffGrid({col,row}, gridSize): boolean
 // geometry
 export function step(coord, heading): coord
 export function reflect(heading, wall): heading
-export function faceToVector(declaredDir, face, rolledCompass): {heading, windKind, X, lootMod}
+export function faceToVector(declaredDir, face, rolledCompass, weatherModel): {heading, windKind, X, lootMod}
 export function sailStops(pos, heading, X, visited, gridSize): coord[]
 // schema
 export function validateGame(game): {ok:true}            // throws GameValidationError on failure

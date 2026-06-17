@@ -1,5 +1,4 @@
 /* styles.css */
-@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Fredoka:wght@400;500;600;700&display=swap');
 
 :root {
     /* Standard poker card sizes */
@@ -12,7 +11,7 @@
 }
 
 body {
-    font-family: 'Fredoka', sans-serif;
+    font-family: 'Nunito', sans-serif;
 }
 
 /* Card rendering styles */
@@ -27,7 +26,7 @@ body {
     flex-direction: column;
     padding: 12px;
     box-sizing: border-box;
-    font-family: 'Bebas Neue', sans-serif;
+    font-family: 'Roboto Condensed', sans-serif;
 }
 
 /* Print specific styles for exact dimensions */
@@ -120,7 +119,7 @@ body {
     background: #ffffff;
     border: 3px solid #1e2b4d;
     color: #1e2b4d;
-    font-size: 28px;
+    font-size: 20px;
     width: 44px;
     height: 44px;
     display: flex;
@@ -206,7 +205,7 @@ body {
 }
 
 .card-fact-text {
-    font-family: 'Fredoka', sans-serif;
+    font-family: 'Nunito', sans-serif;
     font-size: 11px;
     color: #1e2b4d;
     line-height: 1.3;

@@ -78,11 +78,13 @@ const els = {
 function renderCardHtml(card) {
     const theme = `theme-${card.theme || 'pink'}`;
     
-    // Dynamically adjust font size to try to fit long names on one line
-    let nameFontSize = 26;
-    if (card.name.length > 20) {
-        nameFontSize = 16;
-    } else if (card.name.length > 14) {
+    // Dynamically adjust font size to try to fit long names
+    let nameFontSize = 24;
+    if (card.name.length > 18) {
+        nameFontSize = 14;
+    } else if (card.name.length > 12) {
+        nameFontSize = 17;
+    } else if (card.name.length > 9) {
         nameFontSize = 20;
     }
 
@@ -174,6 +176,8 @@ window.openEditor = async (number = null) => {
             document.getElementById('card-number').value = card.number;
             document.getElementById('card-category').value = card.category;
             document.getElementById('card-name').value = card.name;
+            const latinEl = document.getElementById('card-latin-name');
+            if (latinEl) latinEl.value = card.latinName || '';
             if (card.theme) document.getElementById('card-theme').value = card.theme;
             document.getElementById('card-fact').value = card.facts || card.fact;
             document.getElementById('card-image-data').value = card.image || '';
@@ -210,6 +214,7 @@ function updatePreview() {
         category: document.getElementById('card-category').value || 'Kategoria',
         theme: document.getElementById('card-theme').value || 'pink',
         name: document.getElementById('card-name').value || 'Imię Zwierzęcia',
+        latinName: document.getElementById('card-latin-name') ? document.getElementById('card-latin-name').value : '',
         facts: document.getElementById('card-fact').value || 'Tu pojawi się ciekawostka...',
         image: document.getElementById('card-image-data').value
     };
@@ -219,12 +224,17 @@ function updatePreview() {
 function generatePrompt() {
     const name = document.getElementById('card-name').value;
     const cat = document.getElementById('card-category').value;
+    const theme = document.getElementById('card-theme').value;
+    const latinEl = document.getElementById('card-latin-name');
+    const latinName = latinEl ? latinEl.value : '';
+    
     if (name) {
-        document.getElementById('ai-prompt').value = `Uroczy rysunek postaci ${name} (${cat}). Grube czarne kontury, płaskie kolory, lekki cel-shading. Rozmyte pastelowe tło natury. Wysokiej jakości wektorowa ilustracja, styl maskotki, brak tekstu, brak słów, brak liter --ar 3:4`;
+        const latinContext = latinName ? ` (nazwa łacińska: ${latinName})` : '';
+        document.getElementById('ai-prompt').value = `Ilustracja komiksowa dla dzieci: zwierzę ${name}${latinContext}. Radosny, przyjazny i uproszczony styl komiksowy, grube czarne kontury, płaskie i żywe kolory, lekki cel-shading. Nie musi być w 100% wierne anatomicznie, ale NIE może być antropomorficzną maskotką (bez ubrań i ludzkiej twarzy). Rozmyte pastelowe tło środowiska naturalnego pasujące do kategorii "${cat}" (motyw kolorystyczny tła: ${theme}). Wysokiej jakości grafika 2D, brak tekstu, brak liter --ar 3:4`;
         
         const textPromptEl = document.getElementById('text-prompt');
         if (textPromptEl) {
-            textPromptEl.value = `Napisz krótką, ciekawą informację dla dzieci o zwierzęciu: ${name}. Zasugeruj jedną kategorię (np. DOMOWE, LEŚNE, WODNE). Wybierz jeden pasujący kolor z listy: [pink, blue, green, yellow, purple, orange, teal, cyan, indigo, rose, lime, amber, emerald, fuchsia, stone, red]. Zwróć wynik TYLKO w formacie JSON: {"category": "KATEGORIA", "theme": "wybrany_kolor", "fact": "ciekawostka..."}`;
+            textPromptEl.value = `Napisz fascynującą, nieoczywistą ciekawostkę o zwierzęciu: ${name} (np. w stylu "wombaty robią sześcienne kupy" albo "krowy mają najlepszych przyjaciół"). Ciekawostka MUSI być bardzo krótka (maksymalnie 1-2 zdania, do 120 znaków), aby zmieściła się na małej karcie. Zasugeruj jedną kategorię (np. DOMOWE, LEŚNE). Wybierz jeden pasujący kolor: [pink, blue, green, yellow, purple, orange, teal, cyan, indigo, rose, lime, amber, emerald, fuchsia, stone, red]. Podaj również nazwę łacińską zwierzęcia. Zwróć wynik TYLKO w formacie JSON: {"category": "KATEGORIA", "theme": "kolor", "latinName": "nazwa_lacinska", "fact": "ciekawostka..."}`;
         }
     }
 }
@@ -233,7 +243,7 @@ function generatePrompt() {
 els.btnNew.addEventListener('click', () => openEditor());
 els.btnCancel.addEventListener('click', closeEditor);
 
-['card-number', 'card-category', 'card-theme', 'card-name', 'card-fact'].forEach(id => {
+['card-number', 'card-category', 'card-theme', 'card-name', 'card-latin-name', 'card-fact'].forEach(id => {
     const el = document.getElementById(id);
     if (el) {
         el.addEventListener('input', () => {
@@ -256,46 +266,79 @@ document.getElementById('card-image-upload').addEventListener('change', (e) => {
 });
 
 // Clipboard paste support for images and JSON
-document.addEventListener('paste', (e) => {
-    // Only handle if modal is open
-    if (els.modal.classList.contains('hidden')) return;
-
+document.addEventListener('paste', async (e) => {
     // Handle JSON text paste
     const pasteText = (e.clipboardData || window.clipboardData).getData('text');
     if (pasteText) {
         try {
             // Find JSON in the pasted text (in case there is markdown formatting)
-            const jsonMatch = pasteText.match(/\{[\s\S]*\}/);
+            const jsonMatch = pasteText.match(/\[[\s\S]*\]|\{[\s\S]*\}/);
             if (jsonMatch) {
                 const parsed = JSON.parse(jsonMatch[0]);
-                let updated = false;
-                if (parsed.category) {
-                    document.getElementById('card-category').value = parsed.category.toUpperCase();
-                    updated = true;
-                }
-                if (parsed.fact) {
-                    document.getElementById('card-fact').value = parsed.fact;
-                    updated = true;
-                }
-                if (parsed.theme) {
-                    const themeSelect = document.getElementById('card-theme');
-                    const validThemes = Array.from(themeSelect.options).map(o => o.value);
-                    const cleanTheme = parsed.theme.toLowerCase().trim();
-                    if (validThemes.includes(cleanTheme)) {
-                        themeSelect.value = cleanTheme;
-                        updated = true;
+                
+                if (Array.isArray(parsed)) {
+                    // Bulk import
+                    const existing = await getAllCards();
+                    let nextNum = existing.length > 0 ? Math.max(...existing.map(c => c.number)) + 1 : 1;
+                    let added = 0;
+                    for (const item of parsed) {
+                        if (item.name && (item.fact || item.facts)) {
+                            await saveCard({
+                                number: nextNum++,
+                                name: item.name,
+                                latinName: item.latinName || '',
+                                category: item.category || 'Kategoria',
+                                theme: item.theme || 'pink',
+                                facts: item.fact || item.facts,
+                                image: ''
+                            });
+                            added++;
+                        }
                     }
-                }
-                if (updated) {
-                    generatePrompt();
-                    updatePreview();
-                    return; // Successfully handled JSON
+                    if (added > 0) {
+                        alert(`Zaimportowano ${added} kart z JSON!`);
+                        refreshGrid();
+                    }
+                    return; // Successfully handled bulk JSON
+                } else {
+                    if (!els.modal.classList.contains('hidden')) {
+                        let updated = false;
+                        if (parsed.category) {
+                            document.getElementById('card-category').value = parsed.category.toUpperCase();
+                            updated = true;
+                        }
+                        if (parsed.fact) {
+                            document.getElementById('card-fact').value = parsed.fact;
+                            updated = true;
+                        }
+                        if (parsed.theme) {
+                            const themeSelect = document.getElementById('card-theme');
+                            const validThemes = Array.from(themeSelect.options).map(o => o.value);
+                            const cleanTheme = parsed.theme.toLowerCase().trim();
+                            if (validThemes.includes(cleanTheme)) {
+                                themeSelect.value = cleanTheme;
+                                updated = true;
+                            }
+                        }
+                        if (parsed.latinName) {
+                            document.getElementById('card-latin-name').value = parsed.latinName;
+                            updated = true;
+                        }
+                        if (updated) {
+                            generatePrompt();
+                            updatePreview();
+                            return; // Successfully handled JSON
+                        }
+                    }
                 }
             }
         } catch (err) {
             // Not valid JSON, ignore and try processing as image
         }
     }
+
+    // Only handle image pasting if modal is open
+    if (els.modal.classList.contains('hidden')) return;
 
     const items = (e.clipboardData || e.originalEvent.clipboardData).items;
     for (let i = 0; i < items.length; i++) {
@@ -334,6 +377,7 @@ els.form.addEventListener('submit', async (e) => {
         category: document.getElementById('card-category').value,
         theme: document.getElementById('card-theme').value,
         name: document.getElementById('card-name').value,
+        latinName: document.getElementById('card-latin-name').value,
         facts: document.getElementById('card-fact').value,
         image: document.getElementById('card-image-data').value
     };
@@ -361,79 +405,44 @@ els.btnExportJson.addEventListener('click', async () => {
     URL.revokeObjectURL(url);
 });
 
-// CSV Template Download
-const btnDownloadCsvTemplate = document.getElementById('btn-download-csv-template');
-if (btnDownloadCsvTemplate) {
-    btnDownloadCsvTemplate.addEventListener('click', () => {
-        const headers = "name,category,theme,facts\n";
-        const example1 = "Skolopendra Olbrzymia,Jadowite,red,Skolopendra potrafi upolować nawet małą jaszczurkę.\n";
-        const example2 = "Kot Domowy,Domowe,blue,Koty przesypiają nawet 16 godzin dziennie.\n";
-        const csvContent = headers + example1 + example2;
+// Bulk Generator Prompt
+const btnBulkPrompt = document.getElementById('btn-bulk-prompt');
+if (btnBulkPrompt) {
+    btnBulkPrompt.addEventListener('click', () => {
+        const cat = document.getElementById('bulk-category').value || 'Zwierzęta';
+        const theme = document.getElementById('bulk-theme').value || 'pink';
+        const count = document.getElementById('bulk-count').value || 10;
         
-        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'szablon_kart.csv';
-        a.click();
-        URL.revokeObjectURL(url);
+        const prompt = `Jesteś twórcą kart do gry edukacyjnej. Wygeneruj listę ${count} różnych ZWIERZĄT pasujących do kategorii "${cat}".
+Wszystkie wygenerowane elementy MUSZĄ być prawdziwymi zwierzętami. Zwróć wynik TYLKO jako czysty format JSON w postaci tablicy obiektów. Nie dodawaj żadnego tekstu przed ani po JSON.
+Format każdego obiektu:
+{
+  "name": "Polska nazwa gatunkowa",
+  "latinName": "Łacińska nazwa gatunkowa",
+  "category": "${cat.toUpperCase()}",
+  "theme": "${theme}",
+  "fact": "Fascynująca, nieoczywista ciekawostka (np. krowy mają przyjaciół, wombaty robią sześcienne kupy). MUSI być bardzo krótka (max 120 znaków, 1-2 zdania) aby zmieściła się na małej karcie!"
+}`;
+        
+        navigator.clipboard.writeText(prompt).then(() => {
+            alert('Prompt skopiowany! Wklej go do ChatGPT/Claude, a następnie skopiuj wynikowy kod JSON i naciśnij Ctrl+V gdziekolwiek w tej aplikacji by wygenerować karty.');
+        });
     });
 }
 
-// CSV Import
-els.btnImportCsv.addEventListener('click', () => els.csvUpload.click());
-els.csvUpload.addEventListener('change', (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    
-    const reader = new FileReader();
-    reader.onload = async (ev) => {
-        const text = ev.target.result;
-        const lines = text.split('\n').filter(l => l.trim().length > 0);
-        
-        let added = 0;
-        const existing = await getAllCards();
-        let nextNum = existing.length > 0 ? Math.max(...existing.map(c => c.number)) + 1 : 1;
-
-        // Skip header if it exists
-        const start = lines[0].toLowerCase().includes('name') || lines[0].toLowerCase().includes('imię') ? 1 : 0;
-
-        for (let i = start; i < lines.length; i++) {
-            // Simple CSV parse (ignores quotes with commas inside, good enough for bootstrap)
-            const parts = lines[i].split(',');
-            
-            const validThemes = ['pink','blue','green','yellow','purple','orange','teal','cyan','indigo','rose','lime','amber','emerald','fuchsia','stone','red'];
-            const potentialTheme = parts.length > 2 ? parts[2].trim().toLowerCase() : '';
-            
-            if (parts.length >= 4 && validThemes.includes(potentialTheme)) {
-                await saveCard({
-                    number: nextNum++,
-                    name: parts[0].trim(),
-                    category: parts[1].trim(),
-                    theme: potentialTheme,
-                    facts: parts.slice(3).join(',').trim(),
-                    image: ''
-                });
-                added++;
-            } else if (parts.length >= 3) {
-                // Fallback to old format
-                await saveCard({
-                    number: nextNum++,
-                    name: parts[0].trim(),
-                    category: parts[1].trim(),
-                    theme: 'pink',
-                    facts: parts.slice(2).join(',').trim(), // Re-join fun fact if it had commas
-                    image: ''
-                });
-                added++;
+// Delete All
+const btnDeleteAll = document.getElementById('btn-delete-all');
+if (btnDeleteAll) {
+    btnDeleteAll.addEventListener('click', async () => {
+        if (confirm('UWAGA! Czy na pewno chcesz usunąć WSZYSTKIE karty z bazy danych? Tej operacji nie można cofnąć.')) {
+            const cards = await getAllCards();
+            for (const c of cards) {
+                await deleteCard(c.number);
             }
+            refreshGrid();
         }
-        alert(`Zaimportowano ${added} kart.`);
-        els.csvUpload.value = '';
-        refreshGrid();
-    };
-    reader.readAsText(file);
-});
+    });
+}
 
 // PDF Export (using browser print)
 els.btnExportPdf.addEventListener('click', async () => {

@@ -244,11 +244,56 @@ function runTests() {
     test('10. No game-over', () => {
         const state = core.makeInitialState(mockGame);
         core.assertEqualTurns(state); // passes
-        
+
         state.teams[0].turnsTaken = 1;
         assert.throws(() => core.assertEqualTurns(state), /Equal turns invariant/);
     });
-    
+
+    test('11. faceToVector requires weatherModel (contract guard)', () => {
+        // documented signature must fail loudly, not with a cryptic TypeError
+        assert.throws(
+            () => core.faceToVector("E", {type: "compass"}, "E"),
+            /requires weatherModel/
+        );
+    });
+
+    test('12. globalXMod shifts the move count (requirements §4.1 step 3)', () => {
+        const base = { game: mockGame, visited: new Set(), team: { id: 1, pos: "A1" },
+            declaredDir: "E", dieFaceIndex: 0, rolledCompass: "E", globalMod: 0, rubberBand: 0 };
+        assert.strictEqual(core.resolveTurn(base).X, 4);                       // tailwind base
+        assert.strictEqual(core.resolveTurn({ ...base, globalXMod: 2 }).X, 6); // +2 moves
+        assert.strictEqual(core.resolveTurn({ ...base, globalXMod: -10 }).X, 0); // clamped >= 0
+    });
+
+    test('13. shortStopped flags board starvation', () => {
+        const tinyGame = JSON.parse(JSON.stringify(mockGame));
+        tinyGame.config.gridSize = 2;
+        tinyGame.map.secretValues = [];
+        const visited = new Set(["A1"]);
+        // 2x2 board, A1 visited, declared E from A1: only B1 reachable on the row -> < X stops
+        const res = core.resolveTurn({ game: tinyGame, visited, team: { id: 1, pos: "A1" },
+            declaredDir: "E", dieFaceIndex: 0, rolledCompass: "E", globalMod: 0, rubberBand: 0 });
+        assert.ok(res.stops.length < res.X, "expected fewer stops than X");
+        assert.strictEqual(res.shortStopped, true);
+    });
+
+    test('14. Puzzle reward validation (byIndex vs explicit index)', () => {
+        // byIndex:true is accepted with no puzzles[] needed
+        const g = JSON.parse(JSON.stringify(mockGame));
+        g.lootTable = [{ value: 5, reward: { kind: "puzzle", byIndex: true } }];
+        assert.deepStrictEqual(core.validateGame(g), { ok: true });
+
+        // explicit index that doesn't exist -> hard-fail
+        const gBad = JSON.parse(JSON.stringify(mockGame));
+        gBad.lootTable = [{ value: 5, reward: { kind: "puzzle", index: 999 } }];
+        assert.throws(() => core.validateGame(gBad), /Puzzle index 999 not found/);
+
+        // puzzle reward that is neither byIndex nor index -> hard-fail (was silently accepted before)
+        const gUnresolvable = JSON.parse(JSON.stringify(mockGame));
+        gUnresolvable.map.secretValues = [{ coord: "B1", value: 5, reward: { kind: "puzzle" } }];
+        assert.throws(() => core.validateGame(gUnresolvable), /byIndex:true or a valid index/);
+    });
+
     console.log(`\nTests passed: ${passed}/${passed + failed}`);
     if (failed > 0) process.exit(1);
 }
