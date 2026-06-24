@@ -74,211 +74,6 @@ function themeLabel(value) {
     return found ? found[1] : value;
 }
 
-// ---------------------------------------------------------------------------
-// Gemini automation (optional, pre-camp): generate facts JSON + card images.
-// Defaults to the most cost-effective Gemini models; budget is limited.
-// ---------------------------------------------------------------------------
-const GEMINI_KEY_KEY = 'OceanRescue_TCG_geminiKey';
-const TEXT_MODEL_KEY = 'OceanRescue_TCG_textModel';
-const IMAGE_MODEL_KEY = 'OceanRescue_TCG_imageModel';
-const PRICING_KEY = 'OceanRescue_TCG_pricing';
-
-// Cheapest viable models in the Gemini family.
-const DEFAULT_TEXT_MODEL = 'gemini-2.5-flash-lite';
-const DEFAULT_IMAGE_MODEL = 'gemini-2.5-flash-image';
-
-// USD list prices (editable in the UI). Text is per 1M tokens; image is per image.
-const DEFAULT_PRICING = { textIn: 0.10, textOut: 0.40, image: 0.039 };
-
-// Rough token assumptions used only for the up-front estimate.
-const EST_TEXT_INPUT_TOKENS = 350;
-const EST_TEXT_OUTPUT_TOKENS_PER_CARD = 90;
-
-const automation = { running: false, cancel: false, cost: 0 };
-
-function getPricing() {
-    try {
-        const p = JSON.parse(localStorage.getItem(PRICING_KEY));
-        if (p) return { ...DEFAULT_PRICING, ...p };
-    } catch (e) { /* defaults */ }
-    return { ...DEFAULT_PRICING };
-}
-
-function geminiKey() { return (document.getElementById('gemini-key').value || '').trim(); }
-function textModel() { return (document.getElementById('gemini-text-model').value || '').trim() || DEFAULT_TEXT_MODEL; }
-function imageModel() { return (document.getElementById('gemini-image-model').value || '').trim() || DEFAULT_IMAGE_MODEL; }
-
-function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
-
-function extractJson(text) {
-    const m = text.match(/\[[\s\S]*\]|\{[\s\S]*\}/);
-    return m ? m[0] : text;
-}
-
-async function callGeminiText(prompt) {
-    const key = geminiKey();
-    if (!key) throw new Error('Brak klucza API Gemini.');
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${textModel()}:generateContent?key=${encodeURIComponent(key)}`;
-    const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: { temperature: 1.0, responseMimeType: 'application/json' }
-        })
-    });
-    if (!res.ok) throw new Error(`Gemini (tekst) ${res.status}: ${(await res.text()).slice(0, 200)}`);
-    const data = await res.json();
-    const parts = data?.candidates?.[0]?.content?.parts || [];
-    return { text: parts.map(p => p.text || '').join(''), usage: data?.usageMetadata || {} };
-}
-
-async function callGeminiImage(prompt) {
-    const key = geminiKey();
-    if (!key) throw new Error('Brak klucza API Gemini.');
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${imageModel()}:generateContent?key=${encodeURIComponent(key)}`;
-    const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
-    });
-    if (!res.ok) throw new Error(`Gemini (obraz) ${res.status}: ${(await res.text()).slice(0, 200)}`);
-    const data = await res.json();
-    const parts = data?.candidates?.[0]?.content?.parts || [];
-    const imgPart = parts.find(p => p.inlineData || p.inline_data);
-    const inline = imgPart && (imgPart.inlineData || imgPart.inline_data);
-    if (!inline) throw new Error('Brak danych obrazu w odpowiedzi.');
-    const mime = inline.mimeType || inline.mime_type || 'image/png';
-    return { dataUrl: `data:${mime};base64,${inline.data}`, usage: data?.usageMetadata || {} };
-}
-
-// --- Cost estimate -------------------------------------------------------
-function estimateTextCost(count, pricing) {
-    return (EST_TEXT_INPUT_TOKENS * pricing.textIn + count * EST_TEXT_OUTPUT_TOKENS_PER_CARD * pricing.textOut) / 1e6;
-}
-
-async function updateCostEstimate(cards) {
-    const el = document.getElementById('cost-estimate');
-    if (!el) return;
-    if (!cards) cards = await getAllCards();
-    const pricing = getPricing();
-    const count = parseInt(document.getElementById('bulk-count').value) || 0;
-    const missingImages = cards.filter(c => !c.image).length;
-    const textCost = estimateTextCost(count, pricing);
-    const imageCost = missingImages * pricing.image;
-    el.innerHTML = `
-        <div class="font-semibold">Szacowany koszt (USD)</div>
-        <div>Teksty: ~$${textCost.toFixed(4)} (${count} kart)</div>
-        <div>Obrazy: ~$${imageCost.toFixed(2)} (${missingImages} brakujących)</div>
-        <div class="border-t border-amber-300 mt-1 pt-1 font-bold">Razem: ~$${(textCost + imageCost).toFixed(2)}</div>`;
-}
-
-// --- Progress UI ---------------------------------------------------------
-function showProgress(show) {
-    const el = document.getElementById('automation-progress');
-    if (el) el.classList.toggle('hidden', !show);
-}
-function setProgress(done, total, status) {
-    const bar = document.getElementById('progress-bar');
-    if (bar) bar.style.width = total ? `${Math.round((done / total) * 100)}%` : '0%';
-    const st = document.getElementById('progress-status');
-    if (st) st.textContent = status || `${done} / ${total}`;
-}
-function setCostReadout() {
-    const el = document.getElementById('progress-cost');
-    if (el) el.textContent = `Koszt sesji: $${automation.cost.toFixed(4)}`;
-}
-
-// --- Batch: generate facts JSON -----------------------------------------
-async function runBulkTextGeneration() {
-    if (automation.running) return;
-    if (!geminiKey()) { alert('Podaj klucz API Gemini.'); return; }
-    const { cat, theme, count } = bulkParams();
-    const pricing = getPricing();
-    if (!confirm(`Wygenerować ${count} kart (teksty) dla kategorii „${cat}"? Szacowany koszt: ~$${estimateTextCost(count, pricing).toFixed(4)}.`)) return;
-
-    automation.running = true;
-    automation.cancel = false;
-    showProgress(true);
-    setProgress(0, 1, 'Generowanie tekstów…');
-    try {
-        const { text, usage } = await callGeminiText(buildBulkPrompt(cat, theme, count));
-        automation.cost += ((usage.promptTokenCount || 0) * pricing.textIn + (usage.candidatesTokenCount || 0) * pricing.textOut) / 1e6;
-        setCostReadout();
-
-        const arr = JSON.parse(extractJson(text));
-        if (!Array.isArray(arr)) throw new Error('Odpowiedź nie jest tablicą JSON.');
-
-        const existing = await getAllCards();
-        let nextNum = existing.length ? Math.max(...existing.map(c => c.number)) + 1 : 1;
-        let added = 0;
-        for (const item of arr) {
-            if (!item.name || !(item.fact || item.facts)) continue;
-            await saveCard({
-                number: nextNum++,
-                name: item.name,
-                latinName: item.latinName || '',
-                habitat: item.habitat || '',
-                appearance: item.appearance || '',
-                category: item.category || cat,
-                theme: item.theme || theme,
-                facts: item.fact || item.facts,
-                image: ''
-            });
-            added++;
-        }
-        setProgress(1, 1, `Dodano ${added} kart.`);
-        refreshGrid();
-    } catch (e) {
-        setProgress(0, 1, `Błąd: ${e.message}`);
-        alert('Błąd generowania tekstów: ' + e.message);
-    } finally {
-        automation.running = false;
-    }
-}
-
-// --- Batch: generate missing images -------------------------------------
-async function runImageGeneration() {
-    if (automation.running) return;
-    if (!geminiKey()) { alert('Podaj klucz API Gemini.'); return; }
-    const all = await getAllCards();
-    const targets = all.filter(c => !c.image).sort((a, b) => a.number - b.number);
-    if (!targets.length) { alert('Wszystkie karty mają już obrazy.'); return; }
-
-    const pricing = getPricing();
-    if (!confirm(`Wygenerować ${targets.length} obrazów? Szacowany koszt: ~$${(targets.length * pricing.image).toFixed(2)}. Proces można zatrzymać w dowolnym momencie.`)) return;
-
-    automation.running = true;
-    automation.cancel = false;
-    showProgress(true);
-
-    let done = 0, failures = 0;
-    for (const card of targets) {
-        if (automation.cancel) { setProgress(done, targets.length, `Zatrzymano (${done}/${targets.length}).`); break; }
-        setProgress(done, targets.length, `Obraz ${done + 1}/${targets.length}: ${card.name}`);
-        try {
-            const { dataUrl } = await callGeminiImage(buildImagePrompt(card));
-            card.image = dataUrl;
-            await saveCard(card);
-            automation.cost += pricing.image;
-            setCostReadout();
-            done++;
-            refreshGrid();
-        } catch (e) {
-            failures++;
-            setProgress(done, targets.length, `Błąd: ${e.message}`);
-            // First call failing usually means a config/auth problem — abort early.
-            if (done === 0) { alert('Błąd generowania obrazu (przerwano): ' + e.message); break; }
-        }
-        if (automation.cancel) break;
-        await sleep(700); // gentle pacing — controllable, not fast
-    }
-
-    automation.running = false;
-    if (!automation.cancel) setProgress(done, targets.length, `Gotowe: ${done} obrazów, błędów: ${failures}.`);
-    refreshGrid();
-}
-
 function initDB() {
     return new Promise((resolve, reject) => {
         const request = indexedDB.open(DB_NAME, DB_VERSION);
@@ -404,7 +199,6 @@ async function refreshGrid() {
     els.categoryList.innerHTML = Array.from(categories).map(c => `<option value="${c}">`).join('');
 
     updateReadout(cards);
-    updateCostEstimate(cards);
 }
 
 // Update Deck Readout
@@ -497,8 +291,7 @@ function updatePreview() {
     els.previewContainer.innerHTML = renderCardHtml(card);
 }
 
-// Build the image-generation prompt from a card object (used by both the
-// single-card editor and the batch automation).
+// Build the image-generation prompt from a card object.
 function buildImagePrompt(card) {
     const name = card.name || '';
     const cat = card.category || '';
@@ -506,25 +299,16 @@ function buildImagePrompt(card) {
     const latinName = card.latinName || '';
     const habitat = card.habitat || '';
     const appearance = card.appearance || '';
-    const fact = card.facts || card.fact || '';
 
     const latinContext = latinName ? ` (nazwa łacińska: ${latinName})` : '';
-    const factLine = fact
-        ? `\nCIEKAWOSTKA (kontekst — pokaż wizualnie tylko jeśli ma to sens): „${fact}".`
-        : '';
-    // Prefer an explicit habitat; otherwise fall back to the category.
-    const envDescription = habitat || `środowisko właściwe dla kategorii „${cat}"`;
-    const appearanceLine = appearance
-        ? `\nCECHY SZCZEGÓLNE WYGLĄDU (odwzoruj wiernie): ${appearance}.`
+    const env = habitat
+        ? `naturalnego środowiska zwierzęcia: ${habitat}`
+        : `środowiska naturalnego pasującego do kategorii "${cat}"`;
+    const appearanceClause = appearance
+        ? ` Zadbaj o wierne cechy wyglądu: ${appearance}.`
         : '';
 
-    return `Ilustracja jednego zwierzęcia na kartę kolekcjonerską dla dzieci.
-PODMIOT: ${name}${latinContext}. Przedstaw gatunek wiernie i rozpoznawalnie, zgodnie z jego prawdziwym wyglądem.${factLine}${appearanceLine}
-ŚRODOWISKO: umieść zwierzę w jego PRAWDZIWYM, naturalnym środowisku — ${envDescription}. Środowisko MUSI pasować do gatunku (ryba w wodzie, zwierzę pustynne na pustyni). NIGDY nie umieszczaj zwierzęcia w obcym mu habitacie. Tło rozmyte, pastelowe (motyw kolorystyczny: ${theme}).
-STYL: ${getMasterStyle()}
-KOMPOZYCJA: jedno zwierzę, wyśrodkowane, ujęcie portretowe 3:4, bez tekstu i liter.
-NIE POKAZUJ (negatywy): antropomorfizacji (ubrań, ludzkiej twarzy, chodzenia na dwóch nogach); cech anatomicznych, których gatunek NIE posiada (np. oczu u zwierząt bez oczu, nóg u węży, uszu u ryb); błędnego środowiska; tekstu, napisów, znaków wodnych, ramek.
---ar 3:4 --no text, letters, watermark, frame, human features, clothing, wrong habitat`;
+    return `Ilustracja komiksowa dla dzieci: zwierzę ${name}${latinContext}. ${getMasterStyle()} Nie musi być w 100% wierne anatomicznie, ale NIE może być antropomorficzną maskotką (bez ubrań i ludzkiej twarzy).${appearanceClause} Rozmyte pastelowe tło ${env} (motyw kolorystyczny tła: ${theme}). Brak tekstu, brak liter --ar 3:4`;
 }
 
 function generatePrompt() {
@@ -726,8 +510,7 @@ els.btnExportJson.addEventListener('click', async () => {
     URL.revokeObjectURL(url);
 });
 
-// Build the bulk text-generation prompt (shared by the copy button and the
-// Gemini automation).
+// Build the bulk text-generation prompt for the copy-to-clipboard workflow.
 function buildBulkPrompt(cat, theme, count) {
     return `Jesteś twórcą kart do gry edukacyjnej. Wygeneruj listę ${count} różnych ZWIERZĄT pasujących do kategorii "${cat}".
 WERYFIKACJA POPRAWNOŚCI (kluczowe): wszystkie elementy MUSZĄ być prawdziwymi zwierzętami. Dokładnie sprawdź polską nazwę gatunkową i nazwę łacińską — NIE wymyślaj nazw nieistniejących ani nieprawidłowych. Każda ciekawostka MUSI być prawdziwa i możliwa do zweryfikowania — NIE wymyślaj nieistniejących faktów; ma jednak pozostać nieoczywista i interesująca.
@@ -899,55 +682,6 @@ if (btnAddCategory) {
         refreshGrid();
     });
 }
-
-// --- Gemini automation: load persisted config, wire buttons -------------
-(function initAutomation() {
-    const keyEl = document.getElementById('gemini-key');
-    if (keyEl) {
-        keyEl.value = localStorage.getItem(GEMINI_KEY_KEY) || '';
-        keyEl.addEventListener('input', () => localStorage.setItem(GEMINI_KEY_KEY, keyEl.value));
-    }
-
-    const tmEl = document.getElementById('gemini-text-model');
-    if (tmEl) {
-        tmEl.value = localStorage.getItem(TEXT_MODEL_KEY) || DEFAULT_TEXT_MODEL;
-        tmEl.addEventListener('input', () => localStorage.setItem(TEXT_MODEL_KEY, tmEl.value));
-    }
-
-    const imEl = document.getElementById('gemini-image-model');
-    if (imEl) {
-        imEl.value = localStorage.getItem(IMAGE_MODEL_KEY) || DEFAULT_IMAGE_MODEL;
-        imEl.addEventListener('input', () => localStorage.setItem(IMAGE_MODEL_KEY, imEl.value));
-    }
-
-    const pricing = getPricing();
-    const ptin = document.getElementById('price-text-in');
-    const ptout = document.getElementById('price-text-out');
-    const pimg = document.getElementById('price-image');
-    if (ptin) ptin.value = pricing.textIn;
-    if (ptout) ptout.value = pricing.textOut;
-    if (pimg) pimg.value = pricing.image;
-    [ptin, ptout, pimg].forEach(el => el && el.addEventListener('input', () => {
-        localStorage.setItem(PRICING_KEY, JSON.stringify({
-            textIn: parseFloat(ptin.value) || 0,
-            textOut: parseFloat(ptout.value) || 0,
-            image: parseFloat(pimg.value) || 0
-        }));
-        updateCostEstimate();
-    }));
-
-    const bulkCount = document.getElementById('bulk-count');
-    if (bulkCount) bulkCount.addEventListener('input', () => updateCostEstimate());
-
-    const btnText = document.getElementById('btn-auto-text');
-    if (btnText) btnText.addEventListener('click', runBulkTextGeneration);
-    const btnImages = document.getElementById('btn-auto-images');
-    if (btnImages) btnImages.addEventListener('click', runImageGeneration);
-    const btnStop = document.getElementById('btn-stop-automation');
-    if (btnStop) btnStop.addEventListener('click', () => { automation.cancel = true; });
-
-    updateCostEstimate();
-})();
 
 // Master style: load persisted value and save on edit.
 const masterStyleEl = document.getElementById('master-style');
