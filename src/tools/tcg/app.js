@@ -74,6 +74,30 @@ function themeLabel(value) {
     return found ? found[1] : value;
 }
 
+// The color theme is derived from the category (mapping editable in settings).
+function themeForCategory(name, fallback = 'pink') {
+    const c = getCategories().find(c => c.name === name);
+    return c ? c.theme : fallback;
+}
+
+// Fill a category <select> from saved categories; keep `selected` available
+// even if it isn't a managed category (e.g. on a legacy/imported card).
+function populateCategorySelect(selectEl, selected) {
+    if (!selectEl) return;
+    let names = getCategories().map(c => c.name);
+    if (selected && !names.includes(selected)) names = [selected, ...names];
+    selectEl.innerHTML = names.map(n => `<option value="${n}">${n}</option>`).join('');
+    if (selected) selectEl.value = selected;
+}
+
+// Current theme for the open editor: from the chosen category, else the
+// hidden field (preserves a legacy card's stored theme).
+function editorTheme() {
+    const cat = document.getElementById('card-category').value;
+    const found = getCategories().find(c => c.name === cat);
+    return found ? found.theme : (document.getElementById('card-theme').value || 'pink');
+}
+
 function initDB() {
     return new Promise((resolve, reject) => {
         const request = indexedDB.open(DB_NAME, DB_VERSION);
@@ -137,8 +161,7 @@ const els = {
     btnExportJson: document.getElementById('btn-export-json'),
     btnExportPdf: document.getElementById('btn-export-pdf'),
     btnImportCsv: document.getElementById('btn-import-csv'),
-    csvUpload: document.getElementById('csv-upload'),
-    categoryList: document.getElementById('category-list')
+    csvUpload: document.getElementById('csv-upload')
 };
 
 // Render Single Card HTML
@@ -183,20 +206,19 @@ async function refreshGrid() {
 
     cards.forEach(card => {
         categories.add(card.category);
+        // NOTE: the hover buttons live in this grid wrapper (not in renderCardHtml,
+        // which is reused for the print sheet), so they never appear on print.
         html += `
             <div class="relative group cursor-pointer" onclick="openEditor(${card.number})">
                 ${renderCardHtml(card)}
                 <div class="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors rounded-xl"></div>
+                <button onclick="event.stopPropagation(); copyCardPrompt(${card.number}, this)" title="Kopiuj prompt do obrazu" class="absolute -top-2 -left-2 bg-indigo-500 text-white w-6 h-6 rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-xs shadow-md hover:bg-indigo-600">🎨</button>
                 <button onclick="event.stopPropagation(); doDelete(${card.number})" class="absolute -top-2 -right-2 bg-red-500 text-white w-6 h-6 rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-xs font-bold shadow-md hover:bg-red-600">×</button>
             </div>
         `;
     });
-    
+
     els.grid.innerHTML = html;
-    
-    // Update datalist for categories (saved categories + any used on existing cards)
-    getCategories().forEach(c => categories.add(c.name));
-    els.categoryList.innerHTML = Array.from(categories).map(c => `<option value="${c}">`).join('');
 
     updateReadout(cards);
 }
@@ -238,7 +260,9 @@ window.openEditor = async (number = null) => {
         const card = cards.find(c => c.number === number);
         if (card) {
             document.getElementById('card-number').value = card.number;
-            document.getElementById('card-category').value = card.category;
+            populateCategorySelect(document.getElementById('card-category'), card.category);
+            // Hidden theme: from the category mapping, else the card's stored theme.
+            document.getElementById('card-theme').value = themeForCategory(card.category, card.theme || 'pink');
             document.getElementById('card-name').value = card.name;
             const latinEl = document.getElementById('card-latin-name');
             if (latinEl) latinEl.value = card.latinName || '';
@@ -246,7 +270,6 @@ window.openEditor = async (number = null) => {
             if (habitatEl) habitatEl.value = card.habitat || '';
             const appearanceEl = document.getElementById('card-appearance');
             if (appearanceEl) appearanceEl.value = card.appearance || '';
-            if (card.theme) document.getElementById('card-theme').value = card.theme;
             document.getElementById('card-fact').value = card.facts || card.fact;
             document.getElementById('card-image-data').value = card.image || '';
             updatePreview();
@@ -254,6 +277,8 @@ window.openEditor = async (number = null) => {
         document.getElementById('editor-title').textContent = 'Edytuj Kartę';
     } else {
         document.getElementById('editor-title').textContent = 'Nowa Karta';
+        populateCategorySelect(document.getElementById('card-category'));
+        document.getElementById('card-theme').value = editorTheme();
         // Auto-assign next number
         const cards = await getAllCards();
         const nextNum = cards.length > 0 ? Math.max(...cards.map(c => c.number)) + 1 : 1;
@@ -276,11 +301,28 @@ window.doDelete = async (number) => {
     }
 };
 
+// Quick-copy the image prompt for a card straight from the grid (hover button).
+window.copyCardPrompt = async (number, btn) => {
+    const cards = await getAllCards();
+    const card = cards.find(c => c.number === number);
+    if (!card) return;
+    try {
+        await navigator.clipboard.writeText(buildImagePrompt(card));
+        if (btn) {
+            const prev = btn.textContent;
+            btn.textContent = '✓';
+            setTimeout(() => { btn.textContent = prev; }, 1000);
+        }
+    } catch (e) {
+        alert('Nie udało się skopiować prompta: ' + e.message);
+    }
+};
+
 function updatePreview() {
     const card = {
         number: parseInt(document.getElementById('card-number').value) || 0,
         category: document.getElementById('card-category').value || 'Kategoria',
-        theme: document.getElementById('card-theme').value || 'pink',
+        theme: editorTheme(),
         name: document.getElementById('card-name').value || 'Imię Zwierzęcia',
         latinName: document.getElementById('card-latin-name') ? document.getElementById('card-latin-name').value : '',
         habitat: document.getElementById('card-habitat') ? document.getElementById('card-habitat').value : '',
@@ -318,7 +360,7 @@ function generatePrompt() {
         document.getElementById('ai-prompt').value = buildImagePrompt({
             name,
             category: document.getElementById('card-category').value,
-            theme: document.getElementById('card-theme').value,
+            theme: editorTheme(),
             latinName: document.getElementById('card-latin-name').value,
             habitat: document.getElementById('card-habitat').value,
             appearance: document.getElementById('card-appearance').value,
@@ -336,10 +378,12 @@ function generatePrompt() {
 els.btnNew.addEventListener('click', () => openEditor());
 els.btnCancel.addEventListener('click', closeEditor);
 
-['card-number', 'card-category', 'card-theme', 'card-name', 'card-latin-name', 'card-habitat', 'card-appearance', 'card-fact'].forEach(id => {
+['card-number', 'card-category', 'card-name', 'card-latin-name', 'card-habitat', 'card-appearance', 'card-fact'].forEach(id => {
     const el = document.getElementById(id);
     if (el) {
         el.addEventListener('input', () => {
+            // Category change must refresh the derived (hidden) theme first.
+            document.getElementById('card-theme').value = editorTheme();
             updatePreview();
             generatePrompt();
         });
@@ -368,9 +412,15 @@ document.addEventListener('paste', async (e) => {
             const jsonMatch = pasteText.match(/\[[\s\S]*\]|\{[\s\S]*\}/);
             if (jsonMatch) {
                 const parsed = JSON.parse(jsonMatch[0]);
-                
+
+                if (parsed && parsed.deck) {
+                    // A full exported deck — import it (collision-free).
+                    await importDeckData(parsed);
+                    return;
+                }
+
                 if (Array.isArray(parsed)) {
-                    // Bulk import
+                    // Bulk import (LLM output or exported card list). Preserves images.
                     const existing = await getAllCards();
                     let nextNum = existing.length > 0 ? Math.max(...existing.map(c => c.number)) + 1 : 1;
                     let added = 0;
@@ -383,9 +433,9 @@ document.addEventListener('paste', async (e) => {
                                 habitat: item.habitat || '',
                                 appearance: item.appearance || '',
                                 category: item.category || 'Kategoria',
-                                theme: item.theme || 'pink',
+                                theme: item.theme || themeForCategory(item.category),
                                 facts: item.fact || item.facts,
-                                image: ''
+                                image: item.image || ''
                             });
                             added++;
                         }
@@ -399,21 +449,15 @@ document.addEventListener('paste', async (e) => {
                     if (!els.modal.classList.contains('hidden')) {
                         let updated = false;
                         if (parsed.category) {
-                            document.getElementById('card-category').value = parsed.category.toUpperCase();
+                            const cat = parsed.category.toLowerCase().trim();
+                            populateCategorySelect(document.getElementById('card-category'), cat);
+                            // Derive theme from the category; fall back to any pasted theme.
+                            document.getElementById('card-theme').value = themeForCategory(cat, parsed.theme || 'pink');
                             updated = true;
                         }
                         if (parsed.fact) {
                             document.getElementById('card-fact').value = parsed.fact;
                             updated = true;
-                        }
-                        if (parsed.theme) {
-                            const themeSelect = document.getElementById('card-theme');
-                            const validThemes = Array.from(themeSelect.options).map(o => o.value);
-                            const cleanTheme = parsed.theme.toLowerCase().trim();
-                            if (validThemes.includes(cleanTheme)) {
-                                themeSelect.value = cleanTheme;
-                                updated = true;
-                            }
                         }
                         if (parsed.latinName) {
                             document.getElementById('card-latin-name').value = parsed.latinName;
@@ -478,7 +522,7 @@ els.form.addEventListener('submit', async (e) => {
     const card = {
         number: parseInt(document.getElementById('card-number').value),
         category: document.getElementById('card-category').value,
-        theme: document.getElementById('card-theme').value,
+        theme: editorTheme(),
         name: document.getElementById('card-name').value,
         latinName: document.getElementById('card-latin-name').value,
         habitat: document.getElementById('card-habitat').value,
@@ -491,17 +535,19 @@ els.form.addEventListener('submit', async (e) => {
     refreshGrid();
 });
 
-// JSON Export
+// JSON Export — full deck including images, plus category config + master style
+// so a whole deck can be moved between computers / shared with another user.
 els.btnExportJson.addEventListener('click', async () => {
     const cards = await getAllCards();
     const deck = {};
     cards.forEach(c => {
-        const cat = c.category.toLowerCase();
+        const cat = (c.category || 'brak').toLowerCase();
         if (!deck[cat]) deck[cat] = [];
-        deck[cat].push(c);
+        deck[cat].push(c); // full card object — includes the base64 image
     });
-    
-    const blob = new Blob([JSON.stringify({ deck }, null, 2)], { type: 'application/json' });
+
+    const payload = { deck, categories: getCategories(), masterStyle: getMasterStyle() };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -509,6 +555,86 @@ els.btnExportJson.addEventListener('click', async () => {
     a.click();
     URL.revokeObjectURL(url);
 });
+
+// Normalize an imported payload (exported deck object or a flat array) to cards.
+function cardsFromImport(parsed) {
+    let raw = [];
+    if (Array.isArray(parsed)) {
+        raw = parsed;
+    } else if (parsed && parsed.deck && typeof parsed.deck === 'object') {
+        Object.values(parsed.deck).forEach(arr => { if (Array.isArray(arr)) raw = raw.concat(arr); });
+    } else if (parsed && Array.isArray(parsed.cards)) {
+        raw = parsed.cards;
+    }
+    return raw.filter(it => it && it.name).map(it => ({
+        name: it.name,
+        latinName: it.latinName || '',
+        habitat: it.habitat || '',
+        appearance: it.appearance || '',
+        category: it.category || 'Kategoria',
+        theme: it.theme || themeForCategory(it.category),
+        facts: it.facts || it.fact || '',
+        image: it.image || ''
+    }));
+}
+
+// Import a deck (from file or paste). Imported cards are always renumbered to a
+// fresh, collision-free range so they never clash with the existing deck.
+async function importDeckData(parsed) {
+    const incoming = cardsFromImport(parsed);
+    if (!incoming.length) { alert('Plik nie zawiera kart.'); return; }
+
+    if (Array.isArray(parsed.categories) && parsed.categories.length &&
+        confirm('Plik zawiera konfigurację kategorii. Zaimportować ją (zastąpi obecną listę kategorii i motywów)?')) {
+        saveCategories(parsed.categories);
+        renderCategorySettings();
+        renderBulkCategoryOptions();
+    }
+    if (typeof parsed.masterStyle === 'string' && parsed.masterStyle.trim()) {
+        localStorage.setItem(MASTER_STYLE_KEY, parsed.masterStyle);
+        const mse = document.getElementById('master-style');
+        if (mse) mse.value = parsed.masterStyle;
+    }
+
+    const existing = await getAllCards();
+    let replace = false;
+    if (existing.length) {
+        replace = confirm(`W talii jest już ${existing.length} kart.\n\nOK = ZASTĄP całą talię importem.\nAnuluj = DOŁĄCZ import do obecnej talii (bez kolizji numerów).`);
+        if (replace) for (const c of existing) await deleteCard(c.number);
+    }
+
+    // Assign fresh numbers after the (possibly cleared) deck — never collides.
+    const base = await getAllCards();
+    let nextNum = base.length ? Math.max(...base.map(c => c.number)) + 1 : 1;
+    for (const card of incoming) {
+        card.number = nextNum++;
+        await saveCard(card);
+    }
+
+    alert(`Zaimportowano ${incoming.length} kart${replace ? ' (talia zastąpiona)' : ' (dołączono)'}.`);
+    refreshGrid();
+}
+
+// Import deck.json from a file.
+const btnImportJson = document.getElementById('btn-import-json');
+const jsonUpload = document.getElementById('json-upload');
+if (btnImportJson && jsonUpload) {
+    btnImportJson.addEventListener('click', () => jsonUpload.click());
+    jsonUpload.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = async (ev) => {
+            try {
+                await importDeckData(JSON.parse(ev.target.result));
+            } catch (err) {
+                alert('Nieprawidłowy plik JSON: ' + err.message);
+            }
+            e.target.value = ''; // allow re-importing the same file
+        };
+        reader.readAsText(file);
+    });
+}
 
 // Build the bulk text-generation prompt for the copy-to-clipboard workflow.
 function buildBulkPrompt(cat, theme, count) {
@@ -528,9 +654,10 @@ Format każdego obiektu:
 }
 
 function bulkParams() {
+    const cat = document.getElementById('bulk-category').value || 'Zwierzęta';
     return {
-        cat: document.getElementById('bulk-category').value || 'Zwierzęta',
-        theme: document.getElementById('bulk-theme').value || 'pink',
+        cat,
+        theme: themeForCategory(cat), // theme follows the category
         count: parseInt(document.getElementById('bulk-count').value) || 10
     };
 }
@@ -611,16 +738,6 @@ function renderBulkCategoryOptions() {
     sel.innerHTML = cats.map(c => `<option value="${c.name}">${c.name}</option>`).join('');
     // Restore previous selection if still present, otherwise default to first.
     if (cats.some(c => c.name === prev)) sel.value = prev;
-    syncBulkTheme();
-}
-
-// Set the Bulk theme dropdown to the matching theme of the selected category.
-function syncBulkTheme() {
-    const catSel = document.getElementById('bulk-category');
-    const themeSel = document.getElementById('bulk-theme');
-    if (!catSel || !themeSel) return;
-    const cat = getCategories().find(c => c.name === catSel.value);
-    if (cat) themeSel.value = cat.theme;
 }
 
 // Render the editable category list in the settings pane.
@@ -653,14 +770,10 @@ function renderCategorySettings() {
     });
 }
 
-// Wire up the categories settings pane and the bulk dropdowns.
-populateThemeSelect(document.getElementById('bulk-theme'));
+// Wire up the categories settings pane and the bulk dropdown.
 populateThemeSelect(document.getElementById('new-category-theme'));
 renderBulkCategoryOptions();
 renderCategorySettings();
-
-const bulkCatSel = document.getElementById('bulk-category');
-if (bulkCatSel) bulkCatSel.addEventListener('change', syncBulkTheme);
 
 const btnAddCategory = document.getElementById('btn-add-category');
 if (btnAddCategory) {
@@ -678,7 +791,6 @@ if (btnAddCategory) {
         renderCategorySettings();
         renderBulkCategoryOptions();
         document.getElementById('bulk-category').value = name;
-        syncBulkTheme();
         refreshGrid();
     });
 }
