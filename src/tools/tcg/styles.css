@@ -1,13 +1,13 @@
 /* styles.css */
 
 :root {
-    /* Standard poker card sizes */
-    --card-width-mm: 63;
-    --card-height-mm: 88;
+    /* Printed card size: 6cm x 8cm */
+    --card-width-mm: 60mm;
+    --card-height-mm: 80mm;
 
-    /* Convert mm to px for screen display (roughly 3.78px per mm) */
-    --card-width-px: 238px;
-    --card-height-px: 332px;
+    /* Screen preview size (roughly 3.78px per mm) */
+    --card-width-px: 227px;
+    --card-height-px: 302px;
 
     /* The one ink colour. Cards are printed in BLACK ONLY — all colour on the
        physical card comes from the coloured paper stock and the animal avatar. */
@@ -63,9 +63,10 @@ body {
     .print-page {
         page-break-after: always;
         display: grid;
-        grid-template-columns: repeat(3, var(--card-width-px));
-        grid-template-rows: repeat(3, var(--card-height-px));
-        gap: 8px;
+        /* Physical mm so cards print at exactly 6cm x 8cm. */
+        grid-template-columns: repeat(3, var(--card-width-mm));
+        grid-template-rows: repeat(3, var(--card-height-mm));
+        gap: 4mm;
         justify-content: center;
         align-content: center;
         width: 100%;
@@ -74,6 +75,9 @@ body {
     }
 
     .tcg-card {
+        /* Exact physical dimensions at print time. */
+        width: var(--card-width-mm);
+        height: var(--card-height-mm);
         /* No background ink — the coloured paper IS the colour. */
         background: transparent !important;
         /* Visible cutting guide, using inset so it doesn't add to dimensions */
@@ -132,25 +136,6 @@ body {
 .card-inner.border-double { border-style: double; border-width: 6px; }
 .card-inner.border-dashed { border-style: dashed; border-width: 3px; }
 .card-inner.border-dotted { border-style: dotted; border-width: 4px; }
-
-/* Number — black ring, transparent fill (no ink wasted on a white disc). */
-.card-number {
-    position: absolute;
-    top: -12px;
-    left: -12px;
-    background: var(--paper, #fff); /* matches stock so the ring reads cleanly */
-    border: 3px solid var(--ink);
-    color: var(--ink);
-    font-size: 20px;
-    font-weight: 800;
-    width: 40px;
-    height: 40px;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    border-radius: 50%;
-    z-index: 10;
-}
 
 /* Category symbol stamp — a black monochrome glyph in the top-right. Its
    SHAPE tells the player which set a card belongs to (snowflake = polarne…). */

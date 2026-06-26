@@ -230,7 +230,6 @@ function renderCardHtml(card) {
     return `
         <div class="tcg-card paper-${color}">
             <div class="card-inner border-${border}">
-                <div class="card-number">${card.number ?? ''}</div>
                 <div class="card-symbol" title="${card.category || ''}">${glyph}</div>
                 <div class="card-image-container">
                     ${card.image ? `<img src="${card.image}" class="card-image" alt="${card.name}">` : `<div class="placeholder-image">🐾</div>`}
