@@ -4,45 +4,54 @@
     /* Standard poker card sizes */
     --card-width-mm: 63;
     --card-height-mm: 88;
-    
+
     /* Convert mm to px for screen display (roughly 3.78px per mm) */
     --card-width-px: 238px;
     --card-height-px: 332px;
+
+    /* The one ink colour. Cards are printed in BLACK ONLY — all colour on the
+       physical card comes from the coloured paper stock and the animal avatar. */
+    --ink: #000000;
 }
 
 body {
     font-family: 'Nunito', sans-serif;
 }
 
-/* Card rendering styles */
+/* ------------------------------------------------------------------ *
+ * Card shell
+ * The on-screen --paper tint SIMULATES the coloured paper the card is
+ * printed on. On print we drop it to transparent so the printer lays
+ * down no background ink — the real coloured stock shows through.
+ * ------------------------------------------------------------------ */
 .tcg-card {
     width: var(--card-width-px);
     height: var(--card-height-px);
     border-radius: 12px;
-    background: var(--theme-banner, #fca5a5); /* Themed outer border! */
-    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    background: var(--paper, #ffffff); /* simulated coloured stock (screen only) */
     position: relative;
     display: flex;
     flex-direction: column;
-    padding: 12px;
+    padding: 10px;
     box-sizing: border-box;
     font-family: 'Roboto Condensed', sans-serif;
+    color: var(--ink);
 }
 
 /* Print specific styles for exact dimensions */
 @media print {
     @page { margin: 0; size: A4; }
-    
+
     body * {
         visibility: hidden;
         -webkit-print-color-adjust: exact !important;
         print-color-adjust: exact !important;
     }
-    
+
     #print-container, #print-container * {
         visibility: visible;
     }
-    
+
     #print-container {
         position: absolute;
         left: 0;
@@ -65,10 +74,11 @@ body {
     }
 
     .tcg-card {
-        box-shadow: none;
+        /* No background ink — the coloured paper IS the colour. */
+        background: transparent !important;
         /* Visible cutting guide, using inset so it doesn't add to dimensions */
-        outline: 1.5px dashed #94a3b8;
-        outline-offset: -1.5px;
+        outline: 1px dashed #000;
+        outline-offset: -1px;
     }
 }
 
@@ -78,50 +88,63 @@ body {
     transform-origin: center center;
 }
 
-/* Color Themes */
-.theme-pink { --theme-bg: #fdf2f4; --theme-banner: #fca5a5; }
-.theme-blue { --theme-bg: #f0f9ff; --theme-banner: #7dd3fc; }
-.theme-green { --theme-bg: #f0fdf4; --theme-banner: #86efac; }
-.theme-yellow { --theme-bg: #fefce8; --theme-banner: #fde047; }
-.theme-purple { --theme-bg: #faf5ff; --theme-banner: #d8b4fe; }
-.theme-orange { --theme-bg: #fff7ed; --theme-banner: #fdba74; }
-.theme-teal { --theme-bg: #f0fdfa; --theme-banner: #5eead4; }
-.theme-cyan { --theme-bg: #ecfeff; --theme-banner: #67e8f9; }
-.theme-indigo { --theme-bg: #eef2ff; --theme-banner: #a5b4fc; }
-.theme-rose { --theme-bg: #fff1f2; --theme-banner: #fda4af; }
-.theme-lime { --theme-bg: #f7fee7; --theme-banner: #bef264; }
-.theme-amber { --theme-bg: #fffbeb; --theme-banner: #fcd34d; }
-.theme-emerald { --theme-bg: #ecfdf5; --theme-banner: #6ee7b7; }
-.theme-fuchsia { --theme-bg: #fdf4ff; --theme-banner: #f0abfc; }
-.theme-stone { --theme-bg: #fafaf9; --theme-banner: #d6d3d1; }
-.theme-red { --theme-bg: #fef2f2; --theme-banner: #f87171; }
+/* ------------------------------------------------------------------ *
+ * Paper-colour tints (screen preview only).
+ * These mirror the coloured paper the GM feeds the printer. Light tints
+ * so black ink stays legible on top.
+ * ------------------------------------------------------------------ */
+.paper-pink    { --paper: #fbcfe8; }
+.paper-blue    { --paper: #bae6fd; }
+.paper-green   { --paper: #bbf7d0; }
+.paper-yellow  { --paper: #fef08a; }
+.paper-purple  { --paper: #e9d5ff; }
+.paper-orange  { --paper: #fed7aa; }
+.paper-teal    { --paper: #99f6e4; }
+.paper-cyan    { --paper: #a5f3fc; }
+.paper-indigo  { --paper: #c7d2fe; }
+.paper-rose    { --paper: #fecdd3; }
+.paper-lime    { --paper: #d9f99d; }
+.paper-amber   { --paper: #fde68a; }
+.paper-emerald { --paper: #a7f3d0; }
+.paper-fuchsia { --paper: #f5d0fe; }
+.paper-stone   { --paper: #e7e5e4; }
+.paper-red     { --paper: #fecaca; }
+.paper-white   { --paper: #ffffff; }
 
-/* Inner card layout */
+/* ------------------------------------------------------------------ *
+ * Inner card frame — BLACK ink, transparent fill (paper shows through).
+ * The border line-STYLE is what distinguishes a category at a glance.
+ * ------------------------------------------------------------------ */
 .card-inner {
     flex: 1;
     display: flex;
     flex-direction: column;
-    background: #ffffff;
-    border: 3px solid #1e2b4d; /* Navy */
+    background: transparent;
+    border: 3px solid var(--ink);
     border-radius: 6px;
     position: relative;
     min-height: 0;
 }
 
-.card-header {
-    /* No longer constraining items */
-}
+/* Per-category border line styles (set by JS: border-<style>). */
+.card-inner.border-solid  { border-style: solid;  border-width: 3px; }
+.card-inner.border-thick  { border-style: solid;  border-width: 6px; }
+.card-inner.border-double { border-style: double; border-width: 6px; }
+.card-inner.border-dashed { border-style: dashed; border-width: 3px; }
+.card-inner.border-dotted { border-style: dotted; border-width: 4px; }
 
+/* Number — black ring, transparent fill (no ink wasted on a white disc). */
 .card-number {
     position: absolute;
     top: -12px;
     left: -12px;
-    background: #ffffff;
-    border: 3px solid #1e2b4d;
-    color: #1e2b4d;
+    background: var(--paper, #fff); /* matches stock so the ring reads cleanly */
+    border: 3px solid var(--ink);
+    color: var(--ink);
     font-size: 20px;
-    width: 44px;
-    height: 44px;
+    font-weight: 800;
+    width: 40px;
+    height: 40px;
     display: flex;
     justify-content: center;
     align-items: center;
@@ -129,71 +152,87 @@ body {
     z-index: 10;
 }
 
-.card-badge {
+/* Category symbol stamp — a black monochrome glyph in the top-right. Its
+   SHAPE tells the player which set a card belongs to (snowflake = polarne…). */
+.card-symbol {
     position: absolute;
-    top: -6px;
+    top: -12px;
     right: -12px;
-    background: #ffffff;
-    border: 3px solid #1e2b4d;
-    color: #1e2b4d;
-    font-size: 18px;
-    text-transform: uppercase;
-    padding: 2px 12px;
+    background: var(--paper, #fff);
+    border: 3px solid var(--ink);
+    color: var(--ink);
+    font-size: 20px;
+    line-height: 1;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    border-radius: 50%;
     z-index: 10;
-    box-shadow: 4px 4px 0 #1e2b4d;
-    transform: skewX(-8deg);
+    /* Force text (monochrome) presentation so it prints as black ink. */
+    font-variant-emoji: text;
 }
 
 .card-image-container {
-    flex: 1;
+    /* Avatar block — kept SMALLER than before so the Pokemon-style sprite
+       reads as a simple emblem, not a full-bleed photo. */
+    flex: 0 0 56%;
     min-height: 0;
     position: relative;
     display: flex;
     align-items: center;
     justify-content: center;
     background: transparent;
-    border-bottom: 3px solid #1e2b4d;
-    padding: 12px;
+    border-bottom: 3px solid var(--ink);
+    padding: 8px;
 }
 
 .card-image {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
+    max-width: 100%;
+    max-height: 100%;
+    /* The avatar is the ONLY colour element; magenta has been keyed out so the
+       paper shows through behind it. Contain keeps the simple sprite intact. */
+    object-fit: contain;
 }
 
 .placeholder-image {
-    color: #cbd5e1;
+    color: var(--ink);
+    opacity: 0.25;
     font-size: 32px;
 }
 
+/* Name — black-outlined bar, transparent fill, with the category symbol. */
 .card-name-banner {
-    position: absolute;
-    bottom: 84px; /* Positions perfectly on the line above the 100px fact box */
-    left: 4%;
-    right: 4%;
-    background: var(--theme-banner, #fca5a5);
-    color: #1e2b4d; /* Navy Text */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    background: transparent;
+    color: var(--ink);
     text-align: center;
-    padding: 6px 8px;
-    font-size: 26px;
+    padding: 5px 8px;
+    margin: 6px 8px 0 8px;
+    font-size: 24px;
     line-height: 1;
     text-transform: uppercase;
     letter-spacing: 1px;
-    border: 3px solid #1e2b4d;
-    box-shadow: 4px 4px 0 #1e2b4d;
-    z-index: 10;
-    transform: skewX(-5deg);
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    min-height: 32px;
+    font-weight: 800;
+    border: 2px solid var(--ink);
+    border-radius: 4px;
+    min-height: 30px;
+}
+
+.card-name-banner .name-symbol {
+    font-size: 16px;
+    font-variant-emoji: text;
+    flex: 0 0 auto;
 }
 
 .card-fact-box {
-    background: white;
-    padding: 30px 12px 10px 12px;
-    height: 100px;
+    background: transparent;
+    padding: 8px 12px 6px 12px;
+    flex: 1 1 auto;
     display: flex;
     flex-direction: column;
     justify-content: center;
@@ -206,8 +245,8 @@ body {
 
 .card-fact-text {
     font-family: 'Nunito', sans-serif;
-    font-size: 11px;
-    color: #1e2b4d;
+    font-size: 12px;
+    color: var(--ink);
     line-height: 1.3;
     text-align: center;
     overflow: hidden;

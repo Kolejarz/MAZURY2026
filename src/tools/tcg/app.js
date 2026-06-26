@@ -8,76 +8,116 @@ let db;
 let currentEditingId = null;
 
 // Master style: a single place to edit the art style applied to every image prompt.
+// Cards print in BLACK ink on coloured paper, so the avatar is the only colour on
+// the card. We ask for a SIMPLE, low-palette sprite (Pokemon Red/Blue era) on a
+// solid magenta key colour the app strips out automatically.
 const MASTER_STYLE_KEY = 'OceanRescue_TCG_masterStyle';
-const DEFAULT_MASTER_STYLE = 'Radosny, przyjazny i uproszczony styl komiksowy dla dzieci, grube czarne kontury, płaskie i żywe kolory, lekki cel-shading, wysokiej jakości grafika 2D.';
+const DEFAULT_MASTER_STYLE = 'Styl jak sprite zwierzęcia z gry Pokémon Red/Blue na Game Boya: bardzo uproszczone, czytelne kształty, ograniczona paleta (kilka płaskich kolorów), wyraźne czarne kontury, brak gradientów, brak cieniowania, brak tła scenerii, niski poziom detali, grafika pikselowa/retro.';
 
 function getMasterStyle() {
     return localStorage.getItem(MASTER_STYLE_KEY) || DEFAULT_MASTER_STYLE;
 }
 
-// Color themes available for cards (value + Polish label).
-const THEMES = [
-    ['pink', 'Różowy'], ['blue', 'Niebieski'], ['green', 'Zielony'], ['yellow', 'Żółty'],
-    ['purple', 'Fioletowy'], ['orange', 'Pomarańczowy'], ['teal', 'Turkusowy'], ['cyan', 'Błękitny'],
-    ['indigo', 'Indygo'], ['rose', 'Różany'], ['lime', 'Limonkowy'], ['amber', 'Bursztynowy'],
-    ['emerald', 'Szmaragdowy'], ['fuchsia', 'Fuksja'], ['stone', 'Szary'], ['red', 'Czerwony']
+// The magenta key colour used as the avatar background. It is the rarest colour
+// in real animals, so it strips cleanly. Stripping happens in-browser (canvas).
+const CHROMA_HEX = '#FF00FF';
+const CHROMA_RGB = [255, 0, 255];
+const CHROMA_TOLERANCE_KEY = 'OceanRescue_TCG_chromaTolerance';
+function getChromaTolerance() {
+    const v = parseInt(localStorage.getItem(CHROMA_TOLERANCE_KEY));
+    return Number.isFinite(v) ? v : 90; // 0..255 distance threshold
+}
+
+// Paper colours the GM can buy and feed the printer (value + Polish label).
+// On screen these tint the card to SIMULATE the stock; nothing colour is printed.
+const PAPER_COLORS = [
+    ['white', 'Biały'], ['pink', 'Różowy'], ['blue', 'Niebieski'], ['green', 'Zielony'],
+    ['yellow', 'Żółty'], ['purple', 'Fioletowy'], ['orange', 'Pomarańczowy'], ['teal', 'Turkusowy'],
+    ['cyan', 'Błękitny'], ['indigo', 'Indygo'], ['rose', 'Różany'], ['lime', 'Limonkowy'],
+    ['amber', 'Bursztynowy'], ['emerald', 'Szmaragdowy'], ['fuchsia', 'Fuksja'], ['stone', 'Szary'],
+    ['red', 'Czerwony']
 ];
 
-// Categories store: list of { name, theme }, persisted in localStorage.
-// Pre-seeded with the most obvious animal categories and a matching theme each.
+// Black-ink border line-styles (value + Polish label). The line STYLE is what
+// distinguishes a category at a glance once everything is printed in black.
+const BORDERS = [
+    ['solid', 'Ciągła'], ['thick', 'Gruba'], ['double', 'Podwójna'],
+    ['dashed', 'Kreskowana'], ['dotted', 'Kropkowana']
+];
+
+// Categories store: list of { name, color, symbol, border }, persisted locally.
+//  - color  : paper stock the set is printed on (screen tint only)
+//  - symbol : a monochrome glyph stamped in black (its SHAPE marks the set)
+//  - border : black border line-style (a second at-a-glance marker)
 const CATEGORIES_KEY = 'OceanRescue_TCG_categories';
 const DEFAULT_CATEGORIES = [
-    { name: 'domowe', theme: 'pink' },
-    { name: 'dzikie', theme: 'lime' },
-    { name: 'leśne', theme: 'green' },
-    { name: 'morskie', theme: 'blue' },
-    { name: 'oceaniczne', theme: 'cyan' },
-    { name: 'słodkowodne', theme: 'teal' },
-    { name: 'ryby', theme: 'blue' },
-    { name: 'ptaki', theme: 'indigo' },
-    { name: 'gady', theme: 'emerald' },
-    { name: 'płazy', theme: 'lime' },
-    { name: 'ssaki', theme: 'amber' },
-    { name: 'owady', theme: 'yellow' },
-    { name: 'pajęczaki', theme: 'stone' },
-    { name: 'jadowite', theme: 'green' },
-    { name: 'drapieżniki', theme: 'red' },
-    { name: 'roślinożerne', theme: 'lime' },
-    { name: 'afrykańskie', theme: 'orange' },
-    { name: 'polarne', theme: 'cyan' },
-    { name: 'pustynne', theme: 'amber' },
-    { name: 'górskie', theme: 'stone' },
-    { name: 'tropikalne', theme: 'fuchsia' },
-    { name: 'nocne', theme: 'indigo' },
-    { name: 'wymarłe', theme: 'stone' },
-    { name: 'zagrożone', theme: 'rose' },
-    { name: 'gospodarskie', theme: 'yellow' },
-    { name: 'egzotyczne', theme: 'purple' },
-    { name: 'gryzonie', theme: 'amber' },
-    { name: 'naczelne', theme: 'orange' }
+    { name: 'domowe',       color: 'pink',    symbol: '⌂', border: 'solid' },
+    { name: 'dzikie',       color: 'lime',    symbol: '✦', border: 'thick' },
+    { name: 'leśne',        color: 'green',   symbol: '❧', border: 'dashed' },
+    { name: 'morskie',      color: 'blue',    symbol: '≈', border: 'double' },
+    { name: 'oceaniczne',   color: 'cyan',    symbol: '∿', border: 'double' },
+    { name: 'słodkowodne',  color: 'teal',    symbol: '☂', border: 'dashed' },
+    { name: 'ryby',         color: 'blue',    symbol: '❥', border: 'dotted' },
+    { name: 'ptaki',        color: 'indigo',  symbol: '✈', border: 'solid' },
+    { name: 'gady',         color: 'emerald', symbol: '∾', border: 'dotted' },
+    { name: 'płazy',        color: 'lime',    symbol: '☘', border: 'dashed' },
+    { name: 'ssaki',        color: 'amber',   symbol: '✿', border: 'solid' },
+    { name: 'owady',        color: 'yellow',  symbol: '✺', border: 'dotted' },
+    { name: 'pajęczaki',    color: 'stone',   symbol: '✷', border: 'dotted' },
+    { name: 'jadowite',     color: 'green',   symbol: '☣', border: 'thick' },
+    { name: 'drapieżniki',  color: 'red',     symbol: '✸', border: 'thick' },
+    { name: 'roślinożerne', color: 'lime',    symbol: '❦', border: 'solid' },
+    { name: 'afrykańskie',  color: 'orange',  symbol: '☀', border: 'solid' },
+    { name: 'polarne',      color: 'cyan',    symbol: '❅', border: 'double' },
+    { name: 'pustynne',     color: 'amber',   symbol: '☼', border: 'dashed' },
+    { name: 'górskie',      color: 'stone',   symbol: '⛰', border: 'thick' },
+    { name: 'tropikalne',   color: 'fuchsia', symbol: '✤', border: 'solid' },
+    { name: 'nocne',        color: 'indigo',  symbol: '☾', border: 'dotted' },
+    { name: 'wymarłe',      color: 'stone',   symbol: '☠', border: 'double' },
+    { name: 'zagrożone',    color: 'rose',    symbol: '✚', border: 'dashed' },
+    { name: 'gospodarskie', color: 'yellow',  symbol: '✠', border: 'solid' },
+    { name: 'egzotyczne',   color: 'purple',  symbol: '❂', border: 'thick' },
+    { name: 'gryzonie',     color: 'amber',   symbol: '❖', border: 'dotted' },
+    { name: 'naczelne',     color: 'orange',  symbol: '✣', border: 'solid' }
 ];
+
+// Normalize a stored/imported category to the {name,color,symbol,border} shape,
+// migrating the legacy {name, theme} records on the fly.
+function normalizeCategory(c) {
+    if (!c || !c.name) return null;
+    return {
+        name: c.name,
+        color: c.color || c.theme || 'white',
+        symbol: c.symbol || '✦',
+        border: c.border || 'solid'
+    };
+}
 
 function getCategories() {
     try {
         const stored = JSON.parse(localStorage.getItem(CATEGORIES_KEY));
-        if (Array.isArray(stored) && stored.length) return stored;
+        if (Array.isArray(stored) && stored.length) return stored.map(normalizeCategory).filter(Boolean);
     } catch (e) { /* fall through to defaults */ }
     return DEFAULT_CATEGORIES.slice();
 }
 
 function saveCategories(cats) {
-    localStorage.setItem(CATEGORIES_KEY, JSON.stringify(cats));
+    localStorage.setItem(CATEGORIES_KEY, JSON.stringify(cats.map(normalizeCategory).filter(Boolean)));
 }
 
-function themeLabel(value) {
-    const found = THEMES.find(t => t[0] === value);
+function paperLabel(value) {
+    const found = PAPER_COLORS.find(t => t[0] === value);
+    return found ? found[1] : value;
+}
+function borderLabel(value) {
+    const found = BORDERS.find(t => t[0] === value);
     return found ? found[1] : value;
 }
 
-// The color theme is derived from the category (mapping editable in settings).
-function themeForCategory(name, fallback = 'pink') {
+// The full style (paper colour + symbol + border) derived from the category.
+function styleForCategory(name) {
     const c = getCategories().find(c => c.name === name);
-    return c ? c.theme : fallback;
+    return normalizeCategory(c) || { color: 'white', symbol: '✦', border: 'solid' };
 }
 
 // Fill a category <select> from saved categories; keep `selected` available
@@ -90,12 +130,11 @@ function populateCategorySelect(selectEl, selected) {
     if (selected) selectEl.value = selected;
 }
 
-// Current theme for the open editor: from the chosen category, else the
-// hidden field (preserves a legacy card's stored theme).
-function editorTheme() {
+// Current style (paper colour + symbol + border) for the open editor, derived
+// from the chosen category.
+function editorStyle() {
     const cat = document.getElementById('card-category').value;
-    const found = getCategories().find(c => c.name === cat);
-    return found ? found.theme : (document.getElementById('card-theme').value || 'pink');
+    return styleForCategory(cat);
 }
 
 function initDB() {
@@ -164,30 +203,43 @@ const els = {
     csvUpload: document.getElementById('csv-upload')
 };
 
-// Render Single Card HTML
+// Render Single Card HTML.
+// Black ink on coloured paper: the card chrome is all black, the paper tint is
+// screen-only, the border line-style + symbol mark the category, and the keyed
+// avatar is the single colour element.
 function renderCardHtml(card) {
-    const theme = `theme-${card.theme || 'pink'}`;
-    
+    // Prefer the card's own snapshot, but fall back to the live category style.
+    const live = styleForCategory(card.category);
+    const color = card.color || live.color || 'white';
+    const symbol = card.symbol || live.symbol || '✦';
+    const border = card.border || live.border || 'solid';
+
     // Dynamically adjust font size to try to fit long names
     let nameFontSize = 24;
     if (card.name.length > 18) {
-        nameFontSize = 14;
+        nameFontSize = 13;
     } else if (card.name.length > 12) {
-        nameFontSize = 17;
+        nameFontSize = 16;
     } else if (card.name.length > 9) {
-        nameFontSize = 20;
+        nameFontSize = 19;
     }
 
+    // VS-15 (U+FE0E) forces monochrome (text) presentation so the glyph prints as black ink.
+    const glyph = symbol + String.fromCharCode(0xFE0E);
+
     return `
-        <div class="tcg-card ${theme}">
-            <div class="card-inner">
+        <div class="tcg-card paper-${color}">
+            <div class="card-inner border-${border}">
+                <div class="card-number">${card.number ?? ''}</div>
+                <div class="card-symbol" title="${card.category || ''}">${glyph}</div>
                 <div class="card-image-container">
-                    ${card.image ? `<img src="${card.image}" class="card-image" alt="${card.name}">` : `<div class="placeholder-image">📷</div>`}
+                    ${card.image ? `<img src="${card.image}" class="card-image" alt="${card.name}">` : `<div class="placeholder-image">🐾</div>`}
                 </div>
-                <div class="card-name-banner" style="font-size: ${nameFontSize}px;">${card.name}</div>
+                <div class="card-name-banner" style="font-size: ${nameFontSize}px;">
+                    <span class="name-symbol">${glyph}</span><span>${card.name}</span>
+                </div>
                 <div class="card-fact-box">
-                    <div class="card-fact-title">CIEKAWOSTKA</div>
-                    <div class="card-fact-text">${card.facts || card.fact}</div>
+                    <div class="card-fact-text">${card.facts || card.fact || ''}</div>
                 </div>
             </div>
         </div>
@@ -261,8 +313,6 @@ window.openEditor = async (number = null) => {
         if (card) {
             document.getElementById('card-number').value = card.number;
             populateCategorySelect(document.getElementById('card-category'), card.category);
-            // Hidden theme: from the category mapping, else the card's stored theme.
-            document.getElementById('card-theme').value = themeForCategory(card.category, card.theme || 'pink');
             document.getElementById('card-name').value = card.name;
             const latinEl = document.getElementById('card-latin-name');
             if (latinEl) latinEl.value = card.latinName || '';
@@ -278,7 +328,6 @@ window.openEditor = async (number = null) => {
     } else {
         document.getElementById('editor-title').textContent = 'Nowa Karta';
         populateCategorySelect(document.getElementById('card-category'));
-        document.getElementById('card-theme').value = editorTheme();
         // Auto-assign next number
         const cards = await getAllCards();
         const nextNum = cards.length > 0 ? Math.max(...cards.map(c => c.number)) + 1 : 1;
@@ -319,10 +368,11 @@ window.copyCardPrompt = async (number, btn) => {
 };
 
 function updatePreview() {
+    const st = editorStyle();
     const card = {
         number: parseInt(document.getElementById('card-number').value) || 0,
         category: document.getElementById('card-category').value || 'Kategoria',
-        theme: editorTheme(),
+        color: st.color, symbol: st.symbol, border: st.border,
         name: document.getElementById('card-name').value || 'Imię Zwierzęcia',
         latinName: document.getElementById('card-latin-name') ? document.getElementById('card-latin-name').value : '',
         habitat: document.getElementById('card-habitat') ? document.getElementById('card-habitat').value : '',
@@ -333,34 +383,30 @@ function updatePreview() {
     els.previewContainer.innerHTML = renderCardHtml(card);
 }
 
-// Build the image-generation prompt from a card object.
+// Build the per-animal image-generation prompt (step 3 of the workflow).
+// Asks for a simple Pokemon-style sprite on a SOLID MAGENTA key colour that the
+// app strips automatically — so the avatar drops cleanly onto the coloured card.
 function buildImagePrompt(card) {
     const name = card.name || '';
-    const cat = card.category || '';
-    const theme = card.theme || 'pink';
     const latinName = card.latinName || '';
-    const habitat = card.habitat || '';
     const appearance = card.appearance || '';
 
     const latinContext = latinName ? ` (nazwa łacińska: ${latinName})` : '';
-    const env = habitat
-        ? `naturalnego środowiska zwierzęcia: ${habitat}`
-        : `środowiska naturalnego pasującego do kategorii "${cat}"`;
     const appearanceClause = appearance
-        ? ` Zadbaj o wierne cechy wyglądu: ${appearance}.`
+        ? ` Zadbaj o charakterystyczne cechy wyglądu: ${appearance}.`
         : '';
 
-    return `Ilustracja komiksowa dla dzieci: zwierzę ${name}${latinContext}. ${getMasterStyle()} Nie musi być w 100% wierne anatomicznie, ale NIE może być antropomorficzną maskotką (bez ubrań i ludzkiej twarzy).${appearanceClause} Rozmyte pastelowe tło ${env} (motyw kolorystyczny tła: ${theme}). Brak tekstu, brak liter --ar 3:4`;
+    return `Prosty sprite jednego zwierzęcia: ${name}${latinContext}. ${getMasterStyle()} Pojedyncze zwierzę wyśrodkowane w kadrze, NIE antropomorficzne (bez ubrań i ludzkiej twarzy).${appearanceClause} JEDNOLITE, GŁADKIE tło w kolorze magenta (#FF00FF) — czysty, nasycony różowo-fioletowy, BEZ scenerii, bez cieni i bez gradientu (tło zostanie automatycznie usunięte). Sam kontur i wnętrze zwierzęcia NIE mogą używać koloru magenta. Brak tekstu, brak liter, brak ramki --ar 1:1`;
 }
 
 function generatePrompt() {
     const name = document.getElementById('card-name').value;
 
     if (name) {
+        const cat = document.getElementById('card-category').value;
         document.getElementById('ai-prompt').value = buildImagePrompt({
             name,
-            category: document.getElementById('card-category').value,
-            theme: editorTheme(),
+            category: cat,
             latinName: document.getElementById('card-latin-name').value,
             habitat: document.getElementById('card-habitat').value,
             appearance: document.getElementById('card-appearance').value,
@@ -369,7 +415,7 @@ function generatePrompt() {
 
         const textPromptEl = document.getElementById('text-prompt');
         if (textPromptEl) {
-            textPromptEl.value = `Napisz fascynującą, nieoczywistą ciekawostkę o zwierzęciu: ${name}. WERYFIKACJA POPRAWNOŚCI: dokładnie sprawdź polską nazwę gatunkową oraz nazwę łacińską — NIE wymyślaj nazw nieistniejących ani nieprawidłowych. Ciekawostka MUSI być prawdziwa i możliwa do zweryfikowania — NIE wymyślaj nieistniejących faktów; ma jednak pozostać nieoczywista i interesująca (np. "wombaty robią sześcienne kupy", "krowy mają najlepszych przyjaciół"). Ciekawostka MUSI być bardzo krótka (maksymalnie 1-2 zdania, do 120 znaków), aby zmieściła się na małej karcie. Zasugeruj jedną kategorię (np. DOMOWE, LEŚNE). Wybierz jeden pasujący kolor: [pink, blue, green, yellow, purple, orange, teal, cyan, indigo, rose, lime, amber, emerald, fuchsia, stone, red]. Podaj nazwę łacińską oraz krótki opis prawdziwego środowiska (habitat) i charakterystycznych cech wyglądu (appearance, np. brak oczu) — posłużą do wygenerowania poprawnego obrazu. Zwróć wynik TYLKO w formacie JSON: {"category": "KATEGORIA", "theme": "kolor", "latinName": "nazwa_lacinska", "habitat": "środowisko", "appearance": "cechy wyglądu", "fact": "ciekawostka..."}`;
+            textPromptEl.value = `Uzupełnij dane karty zwierzęcia: ${name} (kategoria: ${cat}). WERYFIKACJA POPRAWNOŚCI: dokładnie sprawdź polską nazwę gatunkową oraz nazwę łacińską — NIE wymyślaj nazw nieistniejących ani nieprawidłowych. Jeśli nazwa zawiera zbędny człon gatunku (np. "Koza DOMOWA", "Kot DOMOWY"), skróć ją do potocznej formy ("Koza", "Kot"). Napisz fascynującą, nieoczywistą, ale PRAWDZIWĄ i możliwą do zweryfikowania ciekawostkę (np. "wombaty robią sześcienne kupy", "krowy mają najlepszych przyjaciół") — maksymalnie 1-2 zdania, do 120 znaków. Podaj nazwę łacińską oraz krótki opis prawdziwego środowiska (habitat) i charakterystycznych cech wyglądu (appearance, np. brak oczu) — posłużą do wygenerowania poprawnego obrazu. Zwróć wynik TYLKO w formacie JSON: {"name": "skrócona nazwa", "latinName": "nazwa_lacinska", "habitat": "środowisko", "appearance": "cechy wyglądu", "fact": "ciekawostka..."}`;
         }
     }
 }
@@ -382,24 +428,61 @@ els.btnCancel.addEventListener('click', closeEditor);
     const el = document.getElementById(id);
     if (el) {
         el.addEventListener('input', () => {
-            // Category change must refresh the derived (hidden) theme first.
-            document.getElementById('card-theme').value = editorTheme();
             updatePreview();
             generatePrompt();
         });
     }
 });
 
+// Strip the solid magenta key colour from an uploaded avatar to transparency,
+// so the coloured card paper shows through behind the simple sprite. Runs fully
+// in-browser on a canvas — no network, deterministic given the same input.
+function stripChroma(dataUrl) {
+    return new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+            try {
+                const canvas = document.createElement('canvas');
+                canvas.width = img.naturalWidth;
+                canvas.height = img.naturalHeight;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0);
+                const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                const px = data.data;
+                const [kr, kg, kb] = CHROMA_RGB;
+                const tol = getChromaTolerance();
+                const tol2 = tol * tol;
+                for (let i = 0; i < px.length; i += 4) {
+                    const dr = px[i] - kr, dg = px[i + 1] - kg, db = px[i + 2] - kb;
+                    if (dr * dr + dg * dg + db * db <= tol2) px[i + 3] = 0; // key -> transparent
+                }
+                ctx.putImageData(data, 0, 0);
+                resolve(canvas.toDataURL('image/png'));
+            } catch (e) {
+                // Tainted canvas or other failure — fall back to the original image.
+                resolve(dataUrl);
+            }
+        };
+        img.onerror = () => resolve(dataUrl);
+        img.src = dataUrl;
+    });
+}
+
+// Read a File/Blob to a data URL, strip the magenta key, store it, and refresh.
+async function ingestImageFile(file) {
+    const dataUrl = await new Promise((res) => {
+        const reader = new FileReader();
+        reader.onload = (ev) => res(ev.target.result);
+        reader.readAsDataURL(file);
+    });
+    const stripped = await stripChroma(dataUrl);
+    document.getElementById('card-image-data').value = stripped;
+    updatePreview();
+}
+
 document.getElementById('card-image-upload').addEventListener('change', (e) => {
     const file = e.target.files[0];
-    if (file) {
-        const reader = new FileReader();
-        reader.onload = (ev) => {
-            document.getElementById('card-image-data').value = ev.target.result;
-            updatePreview();
-        };
-        reader.readAsDataURL(file);
-    }
+    if (file) ingestImageFile(file);
 });
 
 // Clipboard paste support for images and JSON
@@ -419,13 +502,24 @@ document.addEventListener('paste', async (e) => {
                     return;
                 }
 
+                // Step 1 output: a categories config { categories: [ {name,color,symbol,border} ] }.
+                if (parsed && Array.isArray(parsed.categories) && !Array.isArray(parsed.deck)) {
+                    if (await importCategoriesConfig(parsed.categories)) return;
+                }
+
+                // Facts-checker output: { corrections: [ {number,name,latinName,fact} ] }.
+                if (parsed && Array.isArray(parsed.corrections)) {
+                    if (await applyFactCorrections(parsed.corrections)) return;
+                }
+
                 if (Array.isArray(parsed)) {
-                    // Bulk import (LLM output or exported card list). Preserves images.
+                    // Step 2 output: a bulk list of animals. Derive style from category.
                     const existing = await getAllCards();
                     let nextNum = existing.length > 0 ? Math.max(...existing.map(c => c.number)) + 1 : 1;
                     let added = 0;
                     for (const item of parsed) {
                         if (item.name && (item.fact || item.facts)) {
+                            const st = styleForCategory(item.category);
                             await saveCard({
                                 number: nextNum++,
                                 name: item.name,
@@ -433,7 +527,9 @@ document.addEventListener('paste', async (e) => {
                                 habitat: item.habitat || '',
                                 appearance: item.appearance || '',
                                 category: item.category || 'Kategoria',
-                                theme: item.theme || themeForCategory(item.category),
+                                color: item.color || st.color,
+                                symbol: item.symbol || st.symbol,
+                                border: item.border || st.border,
                                 facts: item.fact || item.facts,
                                 image: item.image || ''
                             });
@@ -451,8 +547,10 @@ document.addEventListener('paste', async (e) => {
                         if (parsed.category) {
                             const cat = parsed.category.toLowerCase().trim();
                             populateCategorySelect(document.getElementById('card-category'), cat);
-                            // Derive theme from the category; fall back to any pasted theme.
-                            document.getElementById('card-theme').value = themeForCategory(cat, parsed.theme || 'pink');
+                            updated = true;
+                        }
+                        if (parsed.name) {
+                            document.getElementById('card-name').value = parsed.name;
                             updated = true;
                         }
                         if (parsed.fact) {
@@ -491,16 +589,53 @@ document.addEventListener('paste', async (e) => {
     for (let i = 0; i < items.length; i++) {
         if (items[i].type.indexOf('image') !== -1) {
             const file = items[i].getAsFile();
-            const reader = new FileReader();
-            reader.onload = (ev) => {
-                document.getElementById('card-image-data').value = ev.target.result;
-                updatePreview();
-            };
-            reader.readAsDataURL(file);
+            ingestImageFile(file); // strips the magenta key like a normal upload
             break; // Stop after grabbing the first image
         }
     }
 });
+
+// Merge a pasted categories config (step 1). Replace-or-merge by name; keep any
+// existing categories not present in the import. Returns true if it did anything.
+async function importCategoriesConfig(incoming) {
+    const clean = incoming.map(normalizeCategory).filter(Boolean);
+    if (!clean.length) return false;
+    if (!confirm(`Zaimportować ${clean.length} kategorii (motyw: kolor papieru + symbol + ramka)? Istniejące kategorie o tych samych nazwach zostaną zaktualizowane.`)) {
+        return true; // handled (user declined) — don't fall through to other branches
+    }
+    const byName = new Map(getCategories().map(c => [c.name, c]));
+    clean.forEach(c => byName.set(c.name, c));
+    saveCategories([...byName.values()]);
+    renderCategorySettings();
+    renderBulkCategoryOptions();
+    refreshGrid();
+    alert(`Zaktualizowano kategorie (${clean.length}).`);
+    return true;
+}
+
+// Apply facts-checker corrections (verified names/facts) to existing cards by
+// their stable number. Returns true if it handled the payload.
+async function applyFactCorrections(corrections) {
+    const cards = await getAllCards();
+    const byNumber = new Map(cards.map(c => [c.number, c]));
+    let changed = 0;
+    for (const fix of corrections) {
+        const card = byNumber.get(fix.number);
+        if (!card) continue;
+        if (fix.name) card.name = fix.name;
+        if (fix.latinName) card.latinName = fix.latinName;
+        if (fix.fact || fix.facts) card.facts = fix.fact || fix.facts;
+        await saveCard(card);
+        changed++;
+    }
+    if (changed > 0) {
+        alert(`Poprawiono ${changed} kart (nazwy / ciekawostki).`);
+        refreshGrid();
+    } else {
+        alert('Brak dopasowanych kart do poprawek (sprawdź numery).');
+    }
+    return true;
+}
 
 document.getElementById('btn-copy-prompt').addEventListener('click', () => {
     const prompt = document.getElementById('ai-prompt');
@@ -519,10 +654,11 @@ if (btnCopyText) {
 
 els.form.addEventListener('submit', async (e) => {
     e.preventDefault();
+    const st = editorStyle();
     const card = {
         number: parseInt(document.getElementById('card-number').value),
         category: document.getElementById('card-category').value,
-        theme: editorTheme(),
+        color: st.color, symbol: st.symbol, border: st.border,
         name: document.getElementById('card-name').value,
         latinName: document.getElementById('card-latin-name').value,
         habitat: document.getElementById('card-habitat').value,
@@ -566,16 +702,21 @@ function cardsFromImport(parsed) {
     } else if (parsed && Array.isArray(parsed.cards)) {
         raw = parsed.cards;
     }
-    return raw.filter(it => it && it.name).map(it => ({
-        name: it.name,
-        latinName: it.latinName || '',
-        habitat: it.habitat || '',
-        appearance: it.appearance || '',
-        category: it.category || 'Kategoria',
-        theme: it.theme || themeForCategory(it.category),
-        facts: it.facts || it.fact || '',
-        image: it.image || ''
-    }));
+    return raw.filter(it => it && it.name).map(it => {
+        const st = styleForCategory(it.category);
+        return {
+            name: it.name,
+            latinName: it.latinName || '',
+            habitat: it.habitat || '',
+            appearance: it.appearance || '',
+            category: it.category || 'Kategoria',
+            color: it.color || st.color,
+            symbol: it.symbol || st.symbol,
+            border: it.border || st.border,
+            facts: it.facts || it.fact || '',
+            image: it.image || ''
+        };
+    });
 }
 
 // Import a deck (from file or paste). Imported cards are always renumbered to a
@@ -636,39 +777,96 @@ if (btnImportJson && jsonUpload) {
     });
 }
 
-// Build the bulk text-generation prompt for the copy-to-clipboard workflow.
-function buildBulkPrompt(cat, theme, count) {
+// STEP 1 — Categories prompt. Asks the LLM to propose animal categories, each
+// with a paper colour, a black monochrome symbol (its SHAPE marks the set), and
+// a black border line-style. Output is pasted back to (re)configure categories.
+function buildCategoriesPrompt(count) {
+    const colors = PAPER_COLORS.map(c => c[0]).join(', ');
+    const borders = BORDERS.map(b => b[0]).join(', ');
+    return `Jesteś projektantem edukacyjnej gry karcianej o zwierzętach. Zaproponuj ${count} różnych KATEGORII biologicznych zwierząt (np. domowe, polarne, jadowite, leśne, morskie, gady, owady...).
+Karty będą drukowane CZARNYM TUSZEM na KOLOROWYM papierze, więc każda kategoria dostaje „motyw" złożony z trzech cech:
+1. "color" — kolor papieru (wybierz JEDEN z listy): [${colors}].
+2. "symbol" — pojedynczy MONOCHROMATYCZNY znak Unicode, którego KSZTAŁT kojarzy się z kategorią i czytelnie drukuje się na czarno (np. ❅ dla polarnych = płatek śniegu, ☘ dla leśnych = listek, ☣ dla jadowitych, ☀ dla afrykańskich). NIE używaj kolorowych emoji.
+3. "border" — styl czarnej ramki (wybierz JEDEN): [${borders}].
+Dobierz cechy tak, aby kategorie łatwo było od siebie odróżnić po kształcie symbolu i stylu ramki.
+Zwróć wynik TYLKO jako JSON (bez tekstu przed/po):
+{"categories": [ {"name": "nazwa małymi literami", "color": "kolor", "symbol": "znak", "border": "styl"} ]}`;
+}
+
+// STEP 2 — Animals-within-a-category prompt (the colour/symbol/border come from
+// the category, so the LLM does NOT pick them).
+function buildBulkPrompt(cat, count) {
     return `Jesteś twórcą kart do gry edukacyjnej. Wygeneruj listę ${count} różnych ZWIERZĄT pasujących do kategorii "${cat}".
-WERYFIKACJA POPRAWNOŚCI (kluczowe): wszystkie elementy MUSZĄ być prawdziwymi zwierzętami. Dokładnie sprawdź polską nazwę gatunkową i nazwę łacińską — NIE wymyślaj nazw nieistniejących ani nieprawidłowych. Każda ciekawostka MUSI być prawdziwa i możliwa do zweryfikowania — NIE wymyślaj nieistniejących faktów; ma jednak pozostać nieoczywista i interesująca.
+WERYFIKACJA POPRAWNOŚCI (kluczowe): wszystkie elementy MUSZĄ być prawdziwymi zwierzętami. Dokładnie sprawdź polską nazwę gatunkową i nazwę łacińską — NIE wymyślaj nazw nieistniejących ani nieprawidłowych. Jeśli potoczna nazwa zawiera zbędny człon (np. "Koza DOMOWA"), użyj krótszej formy ("Koza"). Każda ciekawostka MUSI być prawdziwa i możliwa do zweryfikowania — NIE wymyślaj nieistniejących faktów; ma jednak pozostać nieoczywista i interesująca.
 Zwróć wynik TYLKO jako czysty format JSON w postaci tablicy obiektów. Nie dodawaj żadnego tekstu przed ani po JSON.
 Format każdego obiektu:
 {
-  "name": "Polska nazwa gatunkowa",
+  "name": "Polska nazwa gatunkowa (krótka, bez zbędnego członu)",
   "latinName": "Łacińska nazwa gatunkowa",
-  "category": "${cat.toUpperCase()}",
-  "theme": "${theme}",
+  "category": "${cat}",
   "habitat": "Krótki opis prawdziwego środowiska naturalnego (do generowania poprawnego obrazu)",
   "appearance": "Charakterystyczne cechy wyglądu, w tym czego gatunek NIE ma (np. brak oczu) — do generowania poprawnego obrazu",
   "fact": "Fascynująca, nieoczywista i PRAWDZIWA ciekawostka (np. krowy mają przyjaciół, wombaty robią sześcienne kupy). MUSI być bardzo krótka (max 120 znaków, 1-2 zdania) aby zmieściła się na małej karcie!"
 }`;
 }
 
+// FACTS CHECKER — hands an independent LLM agent the current deck (number + both
+// names + fact) to verify correctness, trim redundant name parts, and fix facts.
+function buildCheckerPrompt(cards) {
+    const list = cards.map(c => ({
+        number: c.number,
+        name: c.name,
+        latinName: c.latinName || '',
+        fact: c.facts || c.fact || ''
+    }));
+    return `Jesteś niezależnym recenzentem-biologiem. Sprawdź poniższą listę kart zwierząt. Dla KAŻDEJ karty:
+1. Zweryfikuj, że polska nazwa i nazwa łacińska są poprawne i odnoszą się do tego samego, istniejącego gatunku. Jeśli nazwa zawiera zbędny człon gatunku (np. "Koza DOMOWA" → "Koza", "Kot DOMOWY" → "Kot"), skróć ją do potocznej formy.
+2. Zweryfikuj, że ciekawostka jest PRAWDZIWA i możliwa do potwierdzenia. Jeśli jest błędna lub zmyślona — popraw ją na prawdziwą, krótką (do 120 znaków), nieoczywistą ciekawostkę.
+Zwróć TYLKO JSON z poprawkami (zachowaj te same "number"):
+{"corrections": [ {"number": 1, "name": "poprawiona nazwa", "latinName": "poprawiona nazwa łacińska", "fact": "poprawiona ciekawostka"} ]}
+Dane do sprawdzenia:
+${JSON.stringify(list, null, 2)}`;
+}
+
 function bulkParams() {
     const cat = document.getElementById('bulk-category').value || 'Zwierzęta';
     return {
         cat,
-        theme: themeForCategory(cat), // theme follows the category
         count: parseInt(document.getElementById('bulk-count').value) || 10
     };
 }
 
-// Bulk Generator Prompt — copy to clipboard for manual (no-API) workflow.
+// STEP 1 button — copy the categories prompt.
+const btnCatPrompt = document.getElementById('btn-categories-prompt');
+if (btnCatPrompt) {
+    btnCatPrompt.addEventListener('click', () => {
+        const count = parseInt(document.getElementById('categories-count')?.value) || 12;
+        navigator.clipboard.writeText(buildCategoriesPrompt(count)).then(() => {
+            alert('Prompt KATEGORII skopiowany! Wklej go do ChatGPT/Claude, skopiuj wynikowy JSON i naciśnij Ctrl+V gdziekolwiek w tej aplikacji, aby skonfigurować kategorie.');
+        });
+    });
+}
+
+// STEP 2 button — copy the per-category animals prompt.
 const btnBulkPrompt = document.getElementById('btn-bulk-prompt');
 if (btnBulkPrompt) {
     btnBulkPrompt.addEventListener('click', () => {
-        const { cat, theme, count } = bulkParams();
-        navigator.clipboard.writeText(buildBulkPrompt(cat, theme, count)).then(() => {
+        const { cat, count } = bulkParams();
+        navigator.clipboard.writeText(buildBulkPrompt(cat, count)).then(() => {
             alert('Prompt skopiowany! Wklej go do ChatGPT/Claude, a następnie skopiuj wynikowy kod JSON i naciśnij Ctrl+V gdziekolwiek w tej aplikacji by wygenerować karty.');
+        });
+    });
+}
+
+// FACTS CHECKER button — copy a verification prompt for the whole deck.
+const btnCheckerPrompt = document.getElementById('btn-checker-prompt');
+if (btnCheckerPrompt) {
+    btnCheckerPrompt.addEventListener('click', async () => {
+        const cards = await getAllCards();
+        if (!cards.length) { alert('Talia jest pusta — brak kart do sprawdzenia.'); return; }
+        cards.sort((a, b) => a.number - b.number);
+        navigator.clipboard.writeText(buildCheckerPrompt(cards)).then(() => {
+            alert(`Prompt SPRAWDZAJĄCY (${cards.length} kart) skopiowany! Wklej go do osobnego agenta LLM, skopiuj wynikowy JSON i naciśnij Ctrl+V, aby nanieść poprawki.`);
         });
     });
 }
@@ -721,11 +919,19 @@ els.btnExportPdf.addEventListener('click', async () => {
     window.print();
 });
 
-// Populate a <select> with the color theme options.
-function populateThemeSelect(selectEl, selectedValue) {
+// Populate a <select> with the paper-colour options.
+function populatePaperSelect(selectEl, selectedValue) {
     if (!selectEl) return;
-    selectEl.innerHTML = THEMES.map(([value, label]) =>
-        `<option value="${value}">${label} (${value})</option>`).join('');
+    selectEl.innerHTML = PAPER_COLORS.map(([value, label]) =>
+        `<option value="${value}">${label}</option>`).join('');
+    if (selectedValue) selectEl.value = selectedValue;
+}
+
+// Populate a <select> with the border line-style options.
+function populateBorderSelect(selectEl, selectedValue) {
+    if (!selectEl) return;
+    selectEl.innerHTML = BORDERS.map(([value, label]) =>
+        `<option value="${value}">${label}</option>`).join('');
     if (selectedValue) selectEl.value = selectedValue;
 }
 
@@ -752,9 +958,9 @@ function renderCategorySettings() {
     list.innerHTML = cats.map(c => `
         <div class="flex justify-between items-center text-sm border-b border-slate-100 pb-1">
             <span class="flex items-center gap-2 min-w-0">
-                <span class="inline-block w-3 h-3 rounded-full shrink-0 theme-${c.theme}" style="background: var(--theme-banner)"></span>
+                <span class="inline-flex items-center justify-center w-5 h-5 rounded-full shrink-0 paper-${c.color} text-[11px]" style="background: var(--paper); border: 1px solid #000;">${c.symbol || ''}</span>
                 <span class="font-medium text-slate-700 truncate">${c.name}</span>
-                <span class="text-[10px] text-slate-400 shrink-0">${themeLabel(c.theme)}</span>
+                <span class="text-[10px] text-slate-400 shrink-0">${paperLabel(c.color)} · ${borderLabel(c.border)}</span>
             </span>
             <button data-cat="${c.name}" class="cat-del text-red-500 hover:text-red-700 font-bold px-2 shrink-0">×</button>
         </div>
@@ -771,7 +977,8 @@ function renderCategorySettings() {
 }
 
 // Wire up the categories settings pane and the bulk dropdown.
-populateThemeSelect(document.getElementById('new-category-theme'));
+populatePaperSelect(document.getElementById('new-category-color'));
+populateBorderSelect(document.getElementById('new-category-border'));
 renderBulkCategoryOptions();
 renderCategorySettings();
 
@@ -779,19 +986,38 @@ const btnAddCategory = document.getElementById('btn-add-category');
 if (btnAddCategory) {
     btnAddCategory.addEventListener('click', () => {
         const nameEl = document.getElementById('new-category-name');
-        const themeEl = document.getElementById('new-category-theme');
+        const colorEl = document.getElementById('new-category-color');
+        const symbolEl = document.getElementById('new-category-symbol');
+        const borderEl = document.getElementById('new-category-border');
         const name = nameEl.value.trim().toLowerCase();
-        const theme = themeEl.value;
         if (!name) { alert('Podaj nazwę kategorii.'); return; }
         const cats = getCategories();
         if (cats.some(c => c.name === name)) { alert('Taka kategoria już istnieje.'); return; }
-        cats.push({ name, theme });
+        cats.push({
+            name,
+            color: colorEl.value,
+            symbol: (symbolEl.value || '✦').trim(),
+            border: borderEl.value
+        });
         saveCategories(cats);
         nameEl.value = '';
+        if (symbolEl) symbolEl.value = '';
         renderCategorySettings();
         renderBulkCategoryOptions();
         document.getElementById('bulk-category').value = name;
         refreshGrid();
+    });
+}
+
+// Chroma tolerance: load persisted value, reflect in the label, persist on change.
+const chromaEl = document.getElementById('chroma-tolerance');
+const chromaValEl = document.getElementById('chroma-tolerance-val');
+if (chromaEl) {
+    chromaEl.value = getChromaTolerance();
+    if (chromaValEl) chromaValEl.textContent = chromaEl.value;
+    chromaEl.addEventListener('input', () => {
+        localStorage.setItem(CHROMA_TOLERANCE_KEY, chromaEl.value);
+        if (chromaValEl) chromaValEl.textContent = chromaEl.value;
     });
 }
 
