@@ -137,19 +137,20 @@ body {
 .card-inner.border-dashed { border-style: dashed; border-width: 3px; }
 .card-inner.border-dotted { border-style: dotted; border-width: 4px; }
 
-/* Category symbol stamp — a black monochrome glyph in the top-right. Its
-   SHAPE tells the player which set a card belongs to (snowflake = polarne…). */
+/* Category symbol stamp — a black monochrome glyph in the LOWER-RIGHT corner of
+   the avatar, slightly overlapping the image. Its SHAPE tells the player which
+   set a card belongs to (snowflake = polarne…). */
 .card-symbol {
     position: absolute;
-    top: -12px;
-    right: -12px;
+    bottom: 2px;
+    right: 2px;
     background: var(--paper, #fff);
     border: 3px solid var(--ink);
     color: var(--ink);
-    font-size: 20px;
+    font-size: 18px;
     line-height: 1;
-    width: 40px;
-    height: 40px;
+    width: 36px;
+    height: 36px;
     display: flex;
     justify-content: center;
     align-items: center;

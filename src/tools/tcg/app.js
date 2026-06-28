@@ -230,9 +230,9 @@ function renderCardHtml(card) {
     return `
         <div class="tcg-card paper-${color}">
             <div class="card-inner border-${border}">
-                <div class="card-symbol" title="${card.category || ''}">${glyph}</div>
                 <div class="card-image-container">
                     ${card.image ? `<img src="${card.image}" class="card-image" alt="${card.name}">` : `<div class="placeholder-image">🐾</div>`}
+                    <div class="card-symbol" title="${card.category || ''}">${glyph}</div>
                 </div>
                 <div class="card-name-banner" style="font-size: ${nameFontSize}px;">
                     <span class="name-symbol">${glyph}</span><span>${card.name}</span>
@@ -896,25 +896,37 @@ els.btnExportPdf.addEventListener('click', async () => {
 
     const printContainer = document.getElementById('print-container');
     printContainer.innerHTML = '';
-    
-    // Group into pages of 9 cards (3x3 grid fits A4 well)
+
+    // Group cards by category so a page never mixes categories — each category's
+    // cards start on a fresh page. Preserve category order by first appearance
+    // (cards are already sorted by number), and number order within a category.
+    const byCategory = new Map();
+    cards.forEach(card => {
+        const cat = card.category || 'Brak';
+        if (!byCategory.has(cat)) byCategory.set(cat, []);
+        byCategory.get(cat).push(card);
+    });
+
+    // Paginate within each category: 9 cards per A4 page (3x3 grid).
     const CARDS_PER_PAGE = 9;
-    
-    for (let i = 0; i < cards.length; i += CARDS_PER_PAGE) {
-        const pageCards = cards.slice(i, i + CARDS_PER_PAGE);
-        const pageEl = document.createElement('div');
-        pageEl.className = 'print-page';
-        
-        pageCards.forEach(card => {
-            const cardEl = document.createElement('div');
-            // Extract the inner HTML of the card rendering
-            cardEl.innerHTML = renderCardHtml(card);
-            pageEl.appendChild(cardEl.firstElementChild);
-        });
-        
-        printContainer.appendChild(pageEl);
-    }
-    
+
+    byCategory.forEach(catCards => {
+        for (let i = 0; i < catCards.length; i += CARDS_PER_PAGE) {
+            const pageCards = catCards.slice(i, i + CARDS_PER_PAGE);
+            const pageEl = document.createElement('div');
+            pageEl.className = 'print-page';
+
+            pageCards.forEach(card => {
+                const cardEl = document.createElement('div');
+                // Extract the inner HTML of the card rendering
+                cardEl.innerHTML = renderCardHtml(card);
+                pageEl.appendChild(cardEl.firstElementChild);
+            });
+
+            printContainer.appendChild(pageEl);
+        }
+    });
+
     window.print();
 });
 
